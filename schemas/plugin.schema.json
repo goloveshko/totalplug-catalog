@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TotalPlug Plugin Manifest",
+  "type": "object",
+  "required": ["id", "name", "type", "description", "match", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Unique lowercase plugin identifier (e.g. 'cudalister', 'total7zip')"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable plugin name"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["WCX", "WLX", "WFX", "WDX"],
+      "description": "Plugin category"
+    },
+    "category": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "authors": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "license": {
+      "type": "string"
+    },
+    "match": {
+      "type": "object",
+      "required": ["filenames"],
+      "properties": {
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "filenames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Exact binary filenames installed on disk (e.g. ['cudalister.wlx', 'cudalister.wlx64'])"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["github_release", "direct_url", "totalcmd_net"]
+        },
+        "repo": {
+          "type": "string",
+          "description": "GitHub 'owner/repo' (required for github_release)"
+        },
+        "asset_pattern": {
+          "type": "string",
+          "description": "Regexp pattern to match download asset"
+        },
+        "version": {
+          "type": "string",
+          "description": "Static version (required for direct_url)"
+        },
+        "download_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Direct download link (required for direct_url)"
+        },
+        "totalcmd_id": {
+          "type": "string",
+          "description": "ID on totalcmd.net (required for totalcmd_net)"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "github_release" } } },
+          "then": { "required": ["repo"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "direct_url" } } },
+          "then": { "required": ["download_url", "version"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "totalcmd_net" } } },
+          "then": { "required": ["totalcmd_id"] }
+        }
+      ]
+    }
+  }
+}
