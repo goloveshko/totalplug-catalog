@@ -51,8 +51,8 @@ type PluginManifest struct {
 	Source      SourceInfo `json:"source"`
 }
 
-// ResolvedInfo holds dynamically fetched version and download links.
-type ResolvedInfo struct {
+// ResolvedSource holds dynamically fetched version and download links.
+type ResolvedSource struct {
 	Version      string    `json:"version"`
 	DownloadURL  string    `json:"download_url"`
 	PublishedAt  time.Time `json:"published_at,omitempty"`
@@ -61,17 +61,18 @@ type ResolvedInfo struct {
 
 // CatalogEntry represents the final merged entry in catalog.resolved.json.
 type CatalogEntry struct {
-	ID          string        `json:"id"`
-	Name        string        `json:"name"`
-	Type        string        `json:"type"`
-	Category    string        `json:"category,omitempty"`
-	Description string        `json:"description,omitempty"`
-	Authors     []string      `json:"authors,omitempty"`
-	Homepage    string        `json:"homepage,omitempty"`
-	License     string        `json:"license,omitempty"`
-	Match       MatchRule     `json:"match"`
-	Source      SourceInfo    `json:"source"`
-	Resolved    *ResolvedInfo `json:"resolved,omitempty"`
+	ID               string                    `json:"id"`
+	Name             string                    `json:"name"`
+	Type             string                    `json:"type"`
+	Category         string                    `json:"category,omitempty"`
+	Description      string                    `json:"description,omitempty"`
+	Authors          []string                  `json:"authors,omitempty"`
+	Homepage         string                    `json:"homepage,omitempty"`
+	License          string                    `json:"license,omitempty"`
+	Match            MatchRule                 `json:"match"`
+	Source           SourceInfo                `json:"source"`
+	Resolved         *ResolvedSource           `json:"resolved,omitempty"`
+	AvailableSources map[string]ResolvedSource `json:"available_sources,omitempty"`
 }
 
 // CatalogSnapshot is the top-level payload served over CDN.
@@ -94,6 +95,58 @@ type GitHubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Size               int64  `json:"size"`
+}
+
+func parseVersionNumbers(v string) []int {
+	var parts []int
+	var current int
+	var hasNum bool
+
+	for _, ch := range v {
+		if ch >= '0' && ch <= '9' {
+			current = current*10 + int(ch-'0')
+			hasNum = true
+		} else if ch == '.' || ch == '-' || ch == '_' {
+			if hasNum {
+				parts = append(parts, current)
+				current = 0
+				hasNum = false
+			}
+		}
+	}
+	if hasNum {
+		parts = append(parts, current)
+	}
+	return parts
+}
+
+func CompareVersions(v1, v2 string) int {
+	p1 := parseVersionNumbers(v1)
+	p2 := parseVersionNumbers(v2)
+
+	maxLen := len(p1)
+	if len(p2) > maxLen {
+		maxLen = len(p2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		var n1, n2 int
+		if i < len(p1) {
+			n1 = p1[i]
+		}
+		if i < len(p2) {
+			n2 = p2[i]
+		}
+
+		if n1 < n2 {
+			return -1
+		}
+		if n1 > n2 {
+			return 1
+		}
+	}
+
+	return 0
 }
 
 func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
@@ -145,6 +198,12 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			pType = "WDX"
 		}
 
+		resolved := ResolvedSource{
+			Version:      ver,
+			DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id),
+			ResolvedFrom: "totalcmd",
+		}
+
 		entry := CatalogEntry{
 			ID:       fmt.Sprintf("totalcmd_%s", id),
 			Name:     title,
@@ -159,10 +218,9 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 				TotalcmdID:  id,
 				DownloadURL: fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id),
 			},
-			Resolved: &ResolvedInfo{
-				Version:      ver,
-				DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id),
-				ResolvedFrom: "totalcmd",
+			Resolved: &resolved,
+			AvailableSources: map[string]ResolvedSource{
+				"totalcmd": resolved,
 			},
 		}
 
@@ -203,7 +261,7 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 	return manifests, nil
 }
 
-func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghToken string) (*ResolvedInfo, error) {
+func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghToken string) (*ResolvedSource, error) {
 	repo = strings.TrimPrefix(repo, "https://github.com/")
 	repo = strings.TrimSuffix(repo, "/")
 
@@ -260,7 +318,7 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		downloadURL = rel.Assets[0].BrowserDownloadURL
 	}
 
-	return &ResolvedInfo{
+	return &ResolvedSource{
 		Version:      cleanVer,
 		DownloadURL:  downloadURL,
 		PublishedAt:  rel.PublishedAt,
@@ -316,18 +374,20 @@ func main() {
 		logger.Info("Resolving community plugin", "id", m.ID, "source", m.Source.Type)
 
 		entry := CatalogEntry{
-			ID:          m.ID,
-			Name:        m.Name,
-			Type:        m.Type,
-			Category:    m.Category,
-			Description: m.Description,
-			Authors:     m.Authors,
-			Homepage:    m.Homepage,
-			License:     m.License,
-			Match:       m.Match,
-			Source:      m.Source,
+			ID:               m.ID,
+			Name:             m.Name,
+			Type:             m.Type,
+			Category:         m.Category,
+			Description:      m.Description,
+			Authors:          m.Authors,
+			Homepage:         m.Homepage,
+			License:          m.License,
+			Match:            m.Match,
+			Source:           m.Source,
+			AvailableSources: make(map[string]ResolvedSource),
 		}
 
+		// 1. Resolve Primary Source
 		switch m.Source.Type {
 		case "github_release":
 			resolved, err := resolveGitHubRelease(ctx, m.Source.Repo, m.Source.AssetPattern, ghToken)
@@ -335,23 +395,28 @@ func main() {
 				logger.Error("Failed resolving GitHub release", "plugin", m.ID, "repo", m.Source.Repo, "err", err)
 			} else {
 				entry.Resolved = resolved
+				entry.AvailableSources["github"] = *resolved
 			}
 
 		case "direct_url":
-			entry.Resolved = &ResolvedInfo{
+			resolved := ResolvedSource{
 				Version:      m.Source.Version,
 				DownloadURL:  m.Source.DownloadURL,
 				ResolvedFrom: "direct",
 			}
+			entry.Resolved = &resolved
+			entry.AvailableSources["direct"] = resolved
 
 		case "totalcmd_net":
-			entry.Resolved = &ResolvedInfo{
+			resolved := ResolvedSource{
 				DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", m.Source.TotalcmdID),
 				ResolvedFrom: "totalcmd",
 			}
+			entry.Resolved = &resolved
+			entry.AvailableSources["totalcmd"] = resolved
 		}
 
-		// SMART PURGE: Remove legacy totalcmd.net entry if it matches ID, totalcmd_id, name or aliases
+		// 2. Find and link legacy totalcmd.net entry (if exists) into AvailableSources
 		normCommunityID := normalizeStr(m.ID)
 		normCommunityName := normalizeStr(m.Name)
 		normTotalcmdID := normalizeStr(m.Source.TotalcmdID)
@@ -387,12 +452,37 @@ func main() {
 
 			if isDuplicate {
 				keysToDelete = append(keysToDelete, key)
+				// Link totalcmd source if found
+				if existing.Resolved != nil {
+					entry.AvailableSources["totalcmd"] = *existing.Resolved
+				}
 			}
 		}
 
 		for _, k := range keysToDelete {
 			logger.Info("Purged duplicate legacy totalcmd entry", "purged_key", k, "replaced_by", m.ID)
 			delete(mergedMap, k)
+		}
+
+		// 3. SMART VERSION SELECTION: Pick the absolute highest version across all available sources!
+		for srcName, srcInfo := range entry.AvailableSources {
+			if entry.Resolved == nil {
+				res := srcInfo
+				entry.Resolved = &res
+				continue
+			}
+
+			// If another source has a strictly newer version, promote it to entry.Resolved!
+			if CompareVersions(srcInfo.Version, entry.Resolved.Version) > 0 {
+				logger.Info("Promoting higher version source to primary resolved",
+					"plugin", m.ID,
+					"promoted_source", srcName,
+					"new_version", srcInfo.Version,
+					"previous_version", entry.Resolved.Version,
+				)
+				res := srcInfo
+				entry.Resolved = &res
+			}
 		}
 
 		mergedMap[m.ID] = entry
