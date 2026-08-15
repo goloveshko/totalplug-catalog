@@ -1,0 +1,57 @@
+name: Build & Deploy Catalog
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # Runs every 6 hours at minute 0 (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  # Allows triggering the workflow manually from the GitHub Actions UI tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Compile Catalog & Publish to Pages
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out repository source code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Install Go toolchain
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # Step 3: Execute Go builder script to generate dist/
+      - name: Compile and Resolve Catalog
+        run: |
+          go run scripts/builder/main.go -plugins=plugins -out=dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 4: Configure GitHub Pages deployment metadata
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Step 5: Upload the compiled dist folder as a Pages artifact
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'dist'
+
+      # Step 6: Deploy artifact to GitHub Pages CDN
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
