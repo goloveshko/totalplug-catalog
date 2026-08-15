@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
 
 const (
@@ -167,8 +169,11 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
 	}
 
+	// Decode Windows-1251 (CP1251) stream into UTF-8 on the fly:
+	utf8Reader := transform.NewReader(resp.Body, charmap.Windows1251.NewDecoder())
+
 	var list []CatalogEntry
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(utf8Reader)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
