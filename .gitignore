@@ -1,0 +1,16 @@
+# Build output
+dist/
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE / OS
+.idea/
+.vscode/
+.zed
+.DS_Store
+Thumbs.db
