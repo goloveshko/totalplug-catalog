@@ -7,33 +7,35 @@ on:
       - 'plugins/**'
       - 'schemas/**'
       - 'scripts/**'
+      - 'go.mod'
+      - 'go.sum'
 
 jobs:
   validate-schema:
-    name: Validate JSON Schema & Manifests
+    name: Validate JSON Schema & Formatting
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the repository code into the runner
+      # Step 1: Check out PR code
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # Step 2: Set up Node.js to use the AJV JSON Schema validator CLI
+      # Step 2: Set up Node.js for JSON Schema validation
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
-      # Step 3: Install AJV CLI tools globally
+      # Step 3: Install AJV CLI validator
       - name: Install AJV CLI
         run: npm install -g ajv-cli ajv-formats
 
-      # Step 4: Validate all plugin manifests against the JSON schema
-      - name: Validate All Manifests against Schema
+      # Step 4: Validate all manifests in plugins/ against plugin.schema.json
+      - name: Validate Manifests against JSON Schema
         run: |
           ajv validate \
             -s schemas/plugin.schema.json \
-            -d "plugins/**/*.json" \
+            -d "plugins/*/*.json" \
             --spec=draft2020 \
             -c ajv-formats \
             --all-errors
@@ -41,19 +43,21 @@ jobs:
   test-builder:
     name: Test Go Builder Dry-Run
     runs-on: ubuntu-latest
+    needs: [ validate-schema ]
 
     steps:
-      # Step 1: Check out the repository code
+      # Step 1: Check out PR code
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # Step 2: Install Go toolchain
+      # Step 2: Install Go dynamically based on go.mod version
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
+          cache: true
 
-      # Step 3: Run the Go builder to ensure manifests resolve without runtime errors
+      # Step 3: Run the Go builder dry-run with PR data
       - name: Run Catalog Builder Dry-Run
         run: |
           go run scripts/builder/main.go -plugins=plugins -out=dist

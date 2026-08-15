@@ -26,13 +26,14 @@ jobs:
     steps:
       # Step 1: Check out repository source code
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # Step 2: Install Go toolchain
+      # Step 2: Install Go dynamically based on go.mod version
       - name: Setup Go Environment
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
+          cache: true
 
       # Step 3: Execute Go builder script to generate dist/
       - name: Compile and Resolve Catalog
