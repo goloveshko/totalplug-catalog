@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
 )
@@ -23,13 +24,11 @@ const (
 	HTTPTimeout     = 15 * time.Second
 )
 
-// MatchRule defines how TotalPlug matches local files to catalog items.
 type MatchRule struct {
 	Aliases   []string `json:"aliases,omitempty"`
 	Filenames []string `json:"filenames"`
 }
 
-// SourceInfo defines where to retrieve updates.
 type SourceInfo struct {
 	Type         string `json:"type"` // "github_release", "direct_url", "totalcmd_net"
 	Repo         string `json:"repo,omitempty"`
@@ -39,7 +38,6 @@ type SourceInfo struct {
 	TotalcmdID   string `json:"totalcmd_id,omitempty"`
 }
 
-// PluginManifest represents a community-curated JSON manifest.
 type PluginManifest struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
@@ -53,15 +51,14 @@ type PluginManifest struct {
 	Source      SourceInfo `json:"source"`
 }
 
-// ResolvedSource holds dynamically fetched version and download links.
 type ResolvedSource struct {
 	Version      string    `json:"version"`
 	DownloadURL  string    `json:"download_url"`
+	WebURL       string    `json:"web_url,omitempty"`
 	PublishedAt  time.Time `json:"published_at,omitempty"`
 	ResolvedFrom string    `json:"resolved_from"` // "github", "direct", "totalcmd"
 }
 
-// CatalogEntry represents the final merged entry in catalog.resolved.json.
 type CatalogEntry struct {
 	ID               string                    `json:"id"`
 	Name             string                    `json:"name"`
@@ -77,7 +74,6 @@ type CatalogEntry struct {
 	AvailableSources map[string]ResolvedSource `json:"available_sources,omitempty"`
 }
 
-// CatalogSnapshot is the top-level payload served over CDN.
 type CatalogSnapshot struct {
 	Version     int            `json:"version"`
 	GeneratedAt time.Time      `json:"generated_at"`
@@ -85,10 +81,10 @@ type CatalogSnapshot struct {
 	Plugins     []CatalogEntry `json:"plugins"`
 }
 
-// GitHubRelease represents official GitHub API response.
 type GitHubRelease struct {
 	TagName     string        `json:"tag_name"`
 	Name        string        `json:"name"`
+	HTMLURL     string        `json:"html_url"`
 	PublishedAt time.Time     `json:"published_at"`
 	Assets      []GitHubAsset `json:"assets"`
 }
@@ -203,9 +199,13 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			pType = "WDX"
 		}
 
+		webURL := fmt.Sprintf("https://totalcmd.net/plugring/%s.html", id)
+		downloadURL := fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id)
+
 		resolved := ResolvedSource{
 			Version:      ver,
-			DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id),
+			DownloadURL:  downloadURL,
+			WebURL:       webURL,
 			ResolvedFrom: "totalcmd",
 		}
 
@@ -214,6 +214,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			Name:     title,
 			Type:     pType,
 			Category: category,
+			Homepage: webURL,
 			Match: MatchRule{
 				Aliases:   []string{strings.ToLower(title), id},
 				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
@@ -221,7 +222,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			Source: SourceInfo{
 				Type:        "totalcmd_net",
 				TotalcmdID:  id,
-				DownloadURL: fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id),
+				DownloadURL: downloadURL,
 			},
 			Resolved: &resolved,
 			AvailableSources: map[string]ResolvedSource{
@@ -267,10 +268,10 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 }
 
 func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghToken string) (*ResolvedSource, error) {
-	repo = strings.TrimPrefix(repo, "https://github.com/")
-	repo = strings.TrimSuffix(repo, "/")
+	cleanRepo := strings.TrimPrefix(repo, "https://github.com/")
+	cleanRepo = strings.TrimSuffix(cleanRepo, "/")
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", cleanRepo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -323,9 +324,15 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		downloadURL = rel.Assets[0].BrowserDownloadURL
 	}
 
+	webURL := rel.HTMLURL
+	if webURL == "" {
+		webURL = fmt.Sprintf("https://github.com/%s", cleanRepo)
+	}
+
 	return &ResolvedSource{
 		Version:      cleanVer,
 		DownloadURL:  downloadURL,
+		WebURL:       webURL,
 		PublishedAt:  rel.PublishedAt,
 		ResolvedFrom: "github",
 	}, nil
@@ -342,8 +349,6 @@ func main() {
 
 	logger.Info("Starting TotalPlug catalog build process...")
 
-	// 1. Load community manifests
-	logger.Info("Loading community plugins...", "dir", *pluginsDir)
 	communityManifests, err := loadCommunityManifests(*pluginsDir)
 	if err != nil {
 		logger.Warn("Failed to load community plugins (or folder is empty)", "err", err)
@@ -351,8 +356,6 @@ func main() {
 		logger.Info("Discovered community manifests", "count", len(communityManifests))
 	}
 
-	// 2. Fetch base totalcmd.net catalog
-	logger.Info("Fetching base totalcmd.net feed...")
 	baseEntries, err := fetchTotalCmdBaseList(ctx)
 	if err != nil {
 		logger.Error("Failed to fetch base totalcmd list", "err", err)
@@ -361,22 +364,22 @@ func main() {
 		logger.Info("Fetched totalcmd.net entries", "count", len(baseEntries))
 	}
 
-	// 3. Resolve & Overlay Community Plugins
 	mergedMap := make(map[string]CatalogEntry)
-
-	// Add base entries first
 	for _, entry := range baseEntries {
 		mergedMap[entry.ID] = entry
 	}
 
-	// Helper for normalized comparison
 	normalizeStr := func(s string) string {
 		return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "_", ""), "-", ""))
 	}
 
-	// Overlay community plugins with high priority
 	for _, m := range communityManifests {
 		logger.Info("Resolving community plugin", "id", m.ID, "source", m.Source.Type)
+
+		homepage := m.Homepage
+		if homepage == "" && m.Source.Type == "github_release" {
+			homepage = fmt.Sprintf("https://github.com/%s", m.Source.Repo)
+		}
 
 		entry := CatalogEntry{
 			ID:               m.ID,
@@ -385,14 +388,13 @@ func main() {
 			Category:         m.Category,
 			Description:      m.Description,
 			Authors:          m.Authors,
-			Homepage:         m.Homepage,
+			Homepage:         homepage,
 			License:          m.License,
 			Match:            m.Match,
 			Source:           m.Source,
 			AvailableSources: make(map[string]ResolvedSource),
 		}
 
-		// 1. Resolve Primary Source
 		switch m.Source.Type {
 		case "github_release":
 			resolved, err := resolveGitHubRelease(ctx, m.Source.Repo, m.Source.AssetPattern, ghToken)
@@ -407,6 +409,7 @@ func main() {
 			resolved := ResolvedSource{
 				Version:      m.Source.Version,
 				DownloadURL:  m.Source.DownloadURL,
+				WebURL:       m.Homepage,
 				ResolvedFrom: "direct",
 			}
 			entry.Resolved = &resolved
@@ -415,13 +418,13 @@ func main() {
 		case "totalcmd_net":
 			resolved := ResolvedSource{
 				DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", m.Source.TotalcmdID),
+				WebURL:       fmt.Sprintf("https://totalcmd.net/plugring/%s.html", m.Source.TotalcmdID),
 				ResolvedFrom: "totalcmd",
 			}
 			entry.Resolved = &resolved
 			entry.AvailableSources["totalcmd"] = resolved
 		}
 
-		// 2. Find and link legacy totalcmd.net entry (if exists) into AvailableSources
 		normCommunityID := normalizeStr(m.ID)
 		normCommunityName := normalizeStr(m.Name)
 		normTotalcmdID := normalizeStr(m.Source.TotalcmdID)
@@ -438,15 +441,12 @@ func main() {
 
 			isDuplicate := false
 
-			// Match by explicit totalcmd_id
 			if normTotalcmdID != "" && normTotalcmdID == normLegacyID {
 				isDuplicate = true
 			}
-			// Match by ID / Name
 			if normCommunityID == normLegacyID || normCommunityName == normLegacyName || normCommunityID == normLegacyName {
 				isDuplicate = true
 			}
-			// Match by aliases
 			for _, alias := range m.Match.Aliases {
 				normAlias := normalizeStr(alias)
 				if normAlias == normLegacyID || normAlias == normLegacyName {
@@ -457,7 +457,6 @@ func main() {
 
 			if isDuplicate {
 				keysToDelete = append(keysToDelete, key)
-				// Link totalcmd source if found
 				if existing.Resolved != nil {
 					entry.AvailableSources["totalcmd"] = *existing.Resolved
 				}
@@ -469,7 +468,6 @@ func main() {
 			delete(mergedMap, k)
 		}
 
-		// 3. SMART VERSION SELECTION: Pick the absolute highest version across all available sources!
 		for srcName, srcInfo := range entry.AvailableSources {
 			if entry.Resolved == nil {
 				res := srcInfo
@@ -477,7 +475,6 @@ func main() {
 				continue
 			}
 
-			// If another source has a strictly newer version, promote it to entry.Resolved!
 			if CompareVersions(srcInfo.Version, entry.Resolved.Version) > 0 {
 				logger.Info("Promoting higher version source to primary resolved",
 					"plugin", m.ID,
@@ -510,7 +507,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Save catalog.resolved.json
 	resolvedFile := filepath.Join(*outDir, "catalog.resolved.json")
 	fResolved, err := os.Create(resolvedFile)
 	if err != nil {
@@ -526,7 +522,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Save catalog.min.json
 	minFile := filepath.Join(*outDir, "catalog.min.json")
 	fMin, err := os.Create(minFile)
 	if err != nil {
