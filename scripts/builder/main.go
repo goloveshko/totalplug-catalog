@@ -41,7 +41,7 @@ type SourceInfo struct {
 type PluginManifest struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
-	Type        string     `json:"type"` // "WCX", "WLX", "WFX", "WDX"
+	Type        string     `json:"type"` // "WCX", "WLX", "WFX", "WDX", "UTIL", "LANG"
 	Category    string     `json:"category,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Authors     []string   `json:"authors,omitempty"`
@@ -55,6 +55,8 @@ type ResolvedSource struct {
 	Version      string    `json:"version"`
 	DownloadURL  string    `json:"download_url"`
 	WebURL       string    `json:"web_url,omitempty"`
+	Arch         string    `json:"arch,omitempty"`       // "x32", "x64", "x32+x64"
+	HasSource    bool      `json:"has_source,omitempty"` // true if open-source or source archive available
 	PublishedAt  time.Time `json:"published_at,omitempty"`
 	ResolvedFrom string    `json:"resolved_from"` // "github", "direct", "totalcmd"
 }
@@ -68,6 +70,8 @@ type CatalogEntry struct {
 	Authors          []string                  `json:"authors,omitempty"`
 	Homepage         string                    `json:"homepage,omitempty"`
 	License          string                    `json:"license,omitempty"`
+	Arch             string                    `json:"arch,omitempty"`
+	HasSource        bool                      `json:"has_source,omitempty"`
 	Match            MatchRule                 `json:"match"`
 	Source           SourceInfo                `json:"source"`
 	Resolved         *ResolvedSource           `json:"resolved,omitempty"`
@@ -147,6 +151,47 @@ func CompareVersions(v1, v2 string) int {
 	return 0
 }
 
+func parseTotalCmdDate(rawDate string) time.Time {
+	rawDate = strings.TrimSpace(rawDate)
+	if rawDate == "" {
+		return time.Time{}
+	}
+
+	layouts := []string{
+		"02.01.2006",
+		"2.01.2006",
+		"2.1.2006",
+		"02.1.2006",
+		"2006-01-02",
+		"02-01-2006",
+		"2-1-2006",
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, rawDate); err == nil {
+			return t.UTC()
+		}
+	}
+
+	return time.Time{}
+}
+
+func parseTotalCmdArch(rawArch string) (cleanArch string, hasSource bool) {
+	raw := strings.ToLower(strings.TrimSpace(rawArch))
+	if strings.Contains(raw, "src") || strings.Contains(raw, "source") {
+		hasSource = true
+		raw = strings.ReplaceAll(raw, "+src", "")
+		raw = strings.ReplaceAll(raw, "src", "")
+		raw = strings.Trim(raw, "+_ -")
+	}
+
+	cleanArch = raw
+	if cleanArch == "" {
+		cleanArch = "any"
+	}
+	return cleanArch, hasSource
+}
+
 func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TotalCmdListURL, nil)
 	if err != nil {
@@ -185,9 +230,11 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		id := strings.TrimSpace(parts[0])
 		title := strings.TrimSpace(parts[1])
 		ver := strings.TrimSpace(parts[2])
+		rawDate := strings.TrimSpace(parts[3])
 		category := strings.TrimSpace(parts[4])
+		rawArch := strings.TrimSpace(parts[5])
 
-		pType := "WLX"
+		pType := "UTIL"
 		switch strings.ToUpper(category) {
 		case "PACKER", "WCX":
 			pType = "WCX"
@@ -197,8 +244,14 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			pType = "WFX"
 		case "CONTENT", "WDX":
 			pType = "WDX"
+		case "LANG", "LANGUAGE":
+			pType = "LANG"
+		default:
+			pType = "UTIL"
 		}
 
+		cleanArch, hasSource := parseTotalCmdArch(rawArch)
+		pubDate := parseTotalCmdDate(rawDate)
 		webURL := fmt.Sprintf("https://totalcmd.net/plugring/%s.html", id)
 		downloadURL := fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id)
 
@@ -206,15 +259,20 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			Version:      ver,
 			DownloadURL:  downloadURL,
 			WebURL:       webURL,
+			Arch:         cleanArch,
+			HasSource:    hasSource,
+			PublishedAt:  pubDate,
 			ResolvedFrom: "totalcmd",
 		}
 
 		entry := CatalogEntry{
-			ID:       fmt.Sprintf("totalcmd_%s", id),
-			Name:     title,
-			Type:     pType,
-			Category: category,
-			Homepage: webURL,
+			ID:          fmt.Sprintf("totalcmd_%s", id),
+			Name:        title,
+			Type:        pType,
+			Category:    category,
+			Homepage:    webURL,
+			Arch:        cleanArch,
+			HasSource:   hasSource,
 			Match: MatchRule{
 				Aliases:   []string{strings.ToLower(title), id},
 				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
@@ -333,7 +391,9 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		Version:      cleanVer,
 		DownloadURL:  downloadURL,
 		WebURL:       webURL,
-		PublishedAt:  rel.PublishedAt,
+		Arch:         "x32+x64", // GitHub releases for TC almost always provide universal packages
+		HasSource:    true,      // GitHub repo is open-source by definition
+		PublishedAt:  rel.PublishedAt.UTC(),
 		ResolvedFrom: "github",
 	}, nil
 }
@@ -402,6 +462,8 @@ func main() {
 				logger.Error("Failed resolving GitHub release", "plugin", m.ID, "repo", m.Source.Repo, "err", err)
 			} else {
 				entry.Resolved = resolved
+				entry.Arch = resolved.Arch
+				entry.HasSource = resolved.HasSource
 				entry.AvailableSources["github"] = *resolved
 			}
 
@@ -459,6 +521,9 @@ func main() {
 				keysToDelete = append(keysToDelete, key)
 				if existing.Resolved != nil {
 					entry.AvailableSources["totalcmd"] = *existing.Resolved
+					if entry.Arch == "" {
+						entry.Arch = existing.Arch
+					}
 				}
 			}
 		}
