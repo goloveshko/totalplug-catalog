@@ -420,11 +420,16 @@ func main() {
 
 	baseEntries, err := fetchTotalCmdBaseList(ctx)
 	if err != nil {
-		logger.Error("Failed to fetch base totalcmd list", "err", err)
-		baseEntries = []CatalogEntry{}
-	} else {
-		logger.Info("Fetched totalcmd.net entries", "count", len(baseEntries))
+		// Publishing without the base feed would ship a catalog of only
+		// community plugins and wipe ~1200 entries for all clients.
+		logger.Error("Failed to fetch base totalcmd list, aborting build", "err", err)
+		os.Exit(1)
 	}
+	if len(baseEntries) == 0 {
+		logger.Error("totalcmd.net returned an empty base list, aborting build")
+		os.Exit(1)
+	}
+	logger.Info("Fetched totalcmd.net entries", "count", len(baseEntries))
 
 	mergedMap := make(map[string]CatalogEntry)
 	for _, entry := range baseEntries {
