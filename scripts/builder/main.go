@@ -193,6 +193,25 @@ func parseTotalCmdArch(rawArch string) (cleanArch string, hasSource bool) {
 	return cleanArch, hasSource
 }
 
+func classifyPluginType(category string) string {
+	// The totalcmd.net feed labels categories as "fsplugin", "multiarc",
+	// "synplus", etc. — map them to real TC plugin types.
+	switch strings.ToUpper(strings.TrimSpace(category)) {
+	case "PACKER", "WCX", "MULTIARC":
+		return "WCX"
+	case "LISTER", "WLX", "VIEWER":
+		return "WLX"
+	case "FS", "FSPLUGIN", "WFX", "FILE SYSTEM":
+		return "WFX"
+	case "CONTENT", "WDX", "SYNPLUS":
+		return "WDX"
+	case "LANG", "LANGUAGE":
+		return "LANG"
+	default:
+		return "UTIL"
+	}
+}
+
 func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TotalCmdListURL, nil)
 	if err != nil {
@@ -235,23 +254,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		category := strings.TrimSpace(parts[4])
 		rawArch := strings.TrimSpace(parts[5])
 
-		// The totalcmd.net feed labels categories as "fsplugin", "multiarc",
-		// "synplus", etc. — map them to real TC plugin types.
-		pType := "UTIL"
-		switch strings.ToUpper(category) {
-		case "PACKER", "WCX", "MULTIARC":
-			pType = "WCX"
-		case "LISTER", "WLX", "VIEWER":
-			pType = "WLX"
-		case "FS", "FSPLUGIN", "WFX", "FILE SYSTEM":
-			pType = "WFX"
-		case "CONTENT", "WDX", "SYNPLUS":
-			pType = "WDX"
-		case "LANG", "LANGUAGE":
-			pType = "LANG"
-		default:
-			pType = "UTIL"
-		}
+		pType := classifyPluginType(category)
 
 		cleanArch, hasSource := parseTotalCmdArch(rawArch)
 		pubDate := parseTotalCmdDate(rawDate)
@@ -401,6 +404,10 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 	}, nil
 }
 
+func normalizeStr(s string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "_", ""), "-", ""))
+}
+
 func main() {
 	pluginsDir := flag.String("plugins", "plugins", "Path to community plugins directory")
 	outDir := flag.String("out", "dist", "Output directory for compiled catalog")
@@ -435,10 +442,6 @@ func main() {
 	mergedMap := make(map[string]CatalogEntry)
 	for _, entry := range baseEntries {
 		mergedMap[entry.ID] = entry
-	}
-
-	normalizeStr := func(s string) string {
-		return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "_", ""), "-", ""))
 	}
 
 	for _, m := range communityManifests {
