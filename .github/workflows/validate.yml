@@ -57,7 +57,11 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      # Step 3: Run the Go builder dry-run with PR data
+      # Step 3: Run unit tests for the builder's pure functions
+      - name: Run Unit Tests
+        run: go test ./scripts/...
+
+      # Step 4: Run the Go builder dry-run with PR data
       - name: Run Catalog Builder Dry-Run
         run: |
           go run scripts/builder/main.go -plugins=plugins -out=dist

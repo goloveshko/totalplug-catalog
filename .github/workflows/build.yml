@@ -35,24 +35,28 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      # Step 3: Execute Go builder script to generate dist/
+      # Step 3: Run unit tests before publishing
+      - name: Run Unit Tests
+        run: go test ./scripts/...
+
+      # Step 4: Execute Go builder script to generate dist/
       - name: Compile and Resolve Catalog
         run: |
           go run scripts/builder/main.go -plugins=plugins -out=dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 4: Configure GitHub Pages deployment metadata
+      # Step 5: Configure GitHub Pages deployment metadata
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6
 
-      # Step 5: Upload the compiled dist folder as a Pages artifact
+      # Step 6: Upload the compiled dist folder as a Pages artifact
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v5
         with:
           path: 'dist'
 
-      # Step 6: Deploy artifact to GitHub Pages CDN
+      # Step 7: Deploy artifact to GitHub Pages CDN
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
