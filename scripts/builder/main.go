@@ -234,15 +234,17 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		category := strings.TrimSpace(parts[4])
 		rawArch := strings.TrimSpace(parts[5])
 
+		// The totalcmd.net feed labels categories as "fsplugin", "multiarc",
+		// "synplus", etc. — map them to real TC plugin types.
 		pType := "UTIL"
 		switch strings.ToUpper(category) {
-		case "PACKER", "WCX":
+		case "PACKER", "WCX", "MULTIARC":
 			pType = "WCX"
-		case "LISTER", "WLX":
+		case "LISTER", "WLX", "VIEWER":
 			pType = "WLX"
-		case "FS", "WFX", "FILE SYSTEM":
+		case "FS", "FSPLUGIN", "WFX", "FILE SYSTEM":
 			pType = "WFX"
-		case "CONTENT", "WDX":
+		case "CONTENT", "WDX", "SYNPLUS":
 			pType = "WDX"
 		case "LANG", "LANGUAGE":
 			pType = "LANG"
