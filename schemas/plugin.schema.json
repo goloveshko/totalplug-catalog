@@ -43,6 +43,7 @@
     "match": {
       "type": "object",
       "required": ["filenames"],
+      "additionalProperties": false,
       "properties": {
         "aliases": {
           "type": "array",
@@ -59,6 +60,7 @@
     "source": {
       "type": "object",
       "required": ["type"],
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string",
