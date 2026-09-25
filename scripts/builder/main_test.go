@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -189,6 +191,53 @@ func TestDropRedundantSources(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadCommunityManifests(t *testing.T) {
+	writeManifest := func(t *testing.T, dir, file, id string) {
+		t.Helper()
+		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["a.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("loads valid manifests", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifest(t, dir, "one.json", "one")
+		writeManifest(t, dir, "two.json", "two")
+
+		got, err := loadCommunityManifests(dir)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 2, nil", len(got), err)
+		}
+	})
+
+	t.Run("duplicate id fails", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifest(t, dir, "one.json", "same")
+		writeManifest(t, dir, "two.json", "same")
+
+		if _, err := loadCommunityManifests(dir); err == nil {
+			t.Fatal("expected error for duplicate id, got nil")
+		}
+	})
+
+	t.Run("reserved totalcmd_ prefix fails", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifest(t, dir, "one.json", "totalcmd_calendar")
+
+		if _, err := loadCommunityManifests(dir); err == nil {
+			t.Fatal("expected error for reserved prefix, got nil")
+		}
+	})
+
+	t.Run("missing dir is not an error", func(t *testing.T) {
+		got, err := loadCommunityManifests(filepath.Join(t.TempDir(), "nope"))
+		if err != nil || len(got) != 0 {
+			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 0, nil", len(got), err)
+		}
+	})
 }
 
 func TestNormalizeStr(t *testing.T) {

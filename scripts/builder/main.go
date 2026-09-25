@@ -299,6 +299,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 
 func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 	var manifests []PluginManifest
+	seenIDs := make(map[string]string)
 
 	err := filepath.Walk(pluginsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -318,11 +319,24 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 			return fmt.Errorf("parsing %s: %w", path, err)
 		}
 
+		// Base feed entries are keyed "totalcmd_<id>"; a community manifest
+		// with that prefix would silently overwrite one of them during merge.
+		if strings.HasPrefix(strings.ToLower(m.ID), "totalcmd_") {
+			return fmt.Errorf("%s: id %q uses reserved 'totalcmd_' prefix", path, m.ID)
+		}
+		if prev, dup := seenIDs[m.ID]; dup {
+			return fmt.Errorf("duplicate plugin id %q: %s conflicts with %s", m.ID, path, prev)
+		}
+		seenIDs[m.ID] = path
+
 		manifests = append(manifests, m)
 		return nil
 	})
 
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return manifests, nil
@@ -450,10 +464,12 @@ func main() {
 
 	communityManifests, err := loadCommunityManifests(*pluginsDir)
 	if err != nil {
-		logger.Warn("Failed to load community plugins (or folder is empty)", "err", err)
-	} else {
-		logger.Info("Discovered community manifests", "count", len(communityManifests))
+		// A broken or colliding manifest must fail the build loudly,
+		// not disappear silently from the published catalog.
+		logger.Error("Failed to load community manifests", "err", err)
+		os.Exit(1)
 	}
+	logger.Info("Discovered community manifests", "count", len(communityManifests))
 
 	baseEntries, err := fetchTotalCmdBaseList(ctx)
 	if err != nil {
