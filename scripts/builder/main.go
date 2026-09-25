@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -566,6 +567,12 @@ func main() {
 	for _, entry := range mergedMap {
 		finalList = append(finalList, entry)
 	}
+
+	// Map iteration order is random; sort so repeated builds produce
+	// byte-stable output and small diffs on the Pages artifact.
+	slices.SortFunc(finalList, func(a, b CatalogEntry) int {
+		return strings.Compare(a.ID, b.ID)
+	})
 
 	snapshot := CatalogSnapshot{
 		Version:     1,
