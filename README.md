@@ -2,7 +2,7 @@
 
 [![Validate & Build](https://github.com/goloveshko/totalplug-catalog/actions/workflows/build.yml/badge.svg)](https://github.com/goloveshko/totalplug-catalog/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Catalog CDN](https://img.shields.io/badge/CDN-catalog.resolved.json-blue)](https://goloveshko.github.io/totalplug-catalog/catalog.resolved.json)
+[![Catalog CDN](https://img.shields.io/badge/CDN-catalog.resolved.json-blue)](https://sergey.is-a.dev/totalplug-catalog/catalog.resolved.json)
 
 An open-source, community-driven registry and update database for **Total Commander** plugins (`WCX`, `WLX`, `WFX`, `WDX`).
 
@@ -14,10 +14,12 @@ Used as the primary update and discovery source for the [TotalPlug](https://gith
 
 The catalog is compiled and updated automatically every 6 hours via GitHub Actions:
 
-* **Snapshot (Resolved Versions & Assets):**  
-  `https://goloveshko.github.io/totalplug-catalog/catalog.resolved.json`
-* **Raw Master Catalog:**  
-  `https://goloveshko.github.io/totalplug-catalog/catalog.json`
+- **Snapshot (Resolved Versions & Assets):**  
+  `https://sergey.is-a.dev/totalplug-catalog/catalog.resolved.json`
+- **Raw Master Catalog:**  
+  `https://sergey.is-a.dev/totalplug-catalog/catalog.json`
+- **Minified CDN Version:**  
+  `https://sergey.is-a.dev/totalplug-catalog/catalog.min.json`
 
 ---
 
@@ -75,18 +77,18 @@ Adding a plugin takes less than 2 minutes:
 
 ## 📜 Supported Source Types
 
-| Source Type | Description | Required Fields |
-| :--- | :--- | :--- |
+| Source Type      | Description                                                     | Required Fields                    |
+| :--------------- | :-------------------------------------------------------------- | :--------------------------------- |
 | `github_release` | Dynamically fetches latest release tag & assets from GitHub API | `repo`, `asset_pattern` (optional) |
-| `direct_url` | Fixed download link with static version | `download_url`, `version` |
-| `totalcmd_net` | Links to existing totalcmd.net ID | `totalcmd_id` |
+| `direct_url`     | Fixed download link with static version                         | `download_url`, `version`          |
+| `totalcmd_net`   | Links to existing totalcmd.net ID                               | `totalcmd_id`                      |
 
 ---
 
 ## 🙏 Credits & Acknowledgments
 
-* [totalcmd.net](https://totalcmd.net/) — The original long-standing Total Commander plugin database.
-* **Total Commander** is a registered trademark of Christian Ghisler / Ghisler Software GmbH.
+- [totalcmd.net](https://totalcmd.net/) — The original long-standing Total Commander plugin database.
+- **Total Commander** is a registered trademark of Christian Ghisler / Ghisler Software GmbH.
 
 ---
 

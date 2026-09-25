@@ -266,13 +266,13 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		}
 
 		entry := CatalogEntry{
-			ID:          fmt.Sprintf("totalcmd_%s", id),
-			Name:        title,
-			Type:        pType,
-			Category:    category,
-			Homepage:    webURL,
-			Arch:        cleanArch,
-			HasSource:   hasSource,
+			ID:        fmt.Sprintf("totalcmd_%s", id),
+			Name:      title,
+			Type:      pType,
+			Category:  category,
+			Homepage:  webURL,
+			Arch:      cleanArch,
+			HasSource: hasSource,
 			Match: MatchRule{
 				Aliases:   []string{strings.ToLower(title), id},
 				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
@@ -567,41 +567,55 @@ func main() {
 		Plugins:     finalList,
 	}
 
+	// Ensure output directory exists
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
 		logger.Error("Failed to create output dir", "err", err)
 		os.Exit(1)
 	}
 
+	// 1. Save formatted catalog.resolved.json
 	resolvedFile := filepath.Join(*outDir, "catalog.resolved.json")
-	fResolved, err := os.Create(resolvedFile)
-	if err != nil {
-		logger.Error("Failed to write resolved json", "err", err)
-		os.Exit(1)
-	}
-	defer fResolved.Close()
-
-	enc := json.NewEncoder(fResolved)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(snapshot); err != nil {
-		logger.Error("Failed encoding json", "err", err)
+	if err := saveJSON(resolvedFile, snapshot, true); err != nil {
+		logger.Error("Failed to write resolved catalog", "err", err)
 		os.Exit(1)
 	}
 
+	// 2. Save formatted catalog.json (alias for master catalog)
+	masterFile := filepath.Join(*outDir, "catalog.json")
+	if err := saveJSON(masterFile, snapshot, true); err != nil {
+		logger.Error("Failed to write master catalog", "err", err)
+		os.Exit(1)
+	}
+
+	// 3. Save compact catalog.min.json (without indentation for smaller payload)
 	minFile := filepath.Join(*outDir, "catalog.min.json")
-	fMin, err := os.Create(minFile)
-	if err != nil {
-		logger.Error("Failed to write min json", "err", err)
-		os.Exit(1)
-	}
-	defer fMin.Close()
-
-	if err := json.NewEncoder(fMin).Encode(snapshot); err != nil {
-		logger.Error("Failed encoding min json", "err", err)
+	if err := saveJSON(minFile, snapshot, false); err != nil {
+		logger.Error("Failed to write minified catalog", "err", err)
 		os.Exit(1)
 	}
 
 	logger.Info("Build complete successfully!",
-		"output", resolvedFile,
+		"output_dir", *outDir,
 		"total_plugins", snapshot.TotalCount,
 	)
+}
+
+// saveJSON encodes any data struct into a JSON file with proper error handling and immediate resource cleanup.
+func saveJSON(filePath string, data any, indent bool) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("creating file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	enc := json.NewEncoder(file)
+	if indent {
+		enc.SetIndent("", "  ")
+	}
+
+	if err := enc.Encode(data); err != nil {
+		return fmt.Errorf("encoding JSON to %s: %w", filePath, err)
+	}
+
+	return nil
 }
