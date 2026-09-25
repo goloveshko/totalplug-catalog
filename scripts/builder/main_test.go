@@ -240,6 +240,35 @@ func TestLoadCommunityManifests(t *testing.T) {
 	})
 }
 
+func TestDetectArchFromAssets(t *testing.T) {
+	tests := []struct {
+		name  string
+		names []string
+		want  string
+	}{
+		{"universal package", []string{"plugin.zip"}, "x32+x64"},
+		{"empty list", nil, "x32+x64"},
+		{"x64 only", []string{"tool-x64.zip"}, "x64"},
+		{"win64 only", []string{"tool-win64.zip"}, "x64"},
+		{"x86_64 is 64-bit", []string{"tool-x86_64.zip"}, "x64"},
+		{"amd64", []string{"tool.amd64.zip"}, "x64"},
+		{"win32 only", []string{"tool-win32.zip"}, "x32"},
+		{"x86 is 32-bit", []string{"tool-x86.zip"}, "x32"},
+		{"i686", []string{"tool.i686.zip"}, "x32"},
+		{"both split", []string{"tool-win32.zip", "tool-win64.zip"}, "x32+x64"},
+		{"release with source zip", []string{"plugin-1.2.zip", "source code.zip"}, "x32+x64"},
+		{"x64 release plus source", []string{"plugin-x64.zip", "Source code.zip"}, "x64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detectArchFromAssets(tt.names); got != tt.want {
+				t.Errorf("detectArchFromAssets(%v) = %q, want %q", tt.names, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeStr(t *testing.T) {
 	tests := []struct {
 		in, want string

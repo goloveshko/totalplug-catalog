@@ -342,6 +342,38 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 	return manifests, nil
 }
 
+// detectArchFromAssets infers supported architectures from release asset
+// names. TC plugin packages are usually universal, so no arch markers means
+// "x32+x64"; explicit markers narrow it to the arches actually published.
+func detectArchFromAssets(names []string) string {
+	var has32, has64 bool
+	for _, name := range names {
+		n := strings.ToLower(name)
+		// Prevent "x86_64" from matching the x86 (32-bit) marker.
+		n = strings.ReplaceAll(n, "x86_64", "amd64")
+		n = strings.ReplaceAll(n, "x86-64", "amd64")
+
+		if strings.Contains(n, "win32") || strings.Contains(n, "x32") ||
+			strings.Contains(n, "i386") || strings.Contains(n, "i686") ||
+			strings.Contains(n, "x86") {
+			has32 = true
+		}
+		if strings.Contains(n, "win64") || strings.Contains(n, "x64") ||
+			strings.Contains(n, "amd64") {
+			has64 = true
+		}
+	}
+
+	switch {
+	case has32 && !has64:
+		return "x32"
+	case has64 && !has32:
+		return "x64"
+	default:
+		return "x32+x64"
+	}
+}
+
 func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghToken string) (*ResolvedSource, error) {
 	cleanRepo := strings.TrimPrefix(repo, "https://github.com/")
 	cleanRepo = strings.TrimSuffix(cleanRepo, "/")
@@ -399,6 +431,11 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		downloadURL = rel.Assets[0].BrowserDownloadURL
 	}
 
+	var assetNames []string
+	for _, asset := range rel.Assets {
+		assetNames = append(assetNames, asset.Name)
+	}
+
 	webURL := rel.HTMLURL
 	if webURL == "" {
 		webURL = fmt.Sprintf("https://github.com/%s", cleanRepo)
@@ -408,8 +445,8 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		Version:      cleanVer,
 		DownloadURL:  downloadURL,
 		WebURL:       webURL,
-		Arch:         "x32+x64", // GitHub releases for TC almost always provide universal packages
-		HasSource:    true,      // GitHub repo is open-source by definition
+		Arch:         detectArchFromAssets(assetNames),
+		HasSource:    true, // public GitHub repo means source is available
 		PublishedAt:  rel.PublishedAt.UTC(),
 		ResolvedFrom: "github",
 	}, nil
