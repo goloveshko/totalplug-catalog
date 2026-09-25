@@ -94,6 +94,103 @@ func TestClassifyPluginType(t *testing.T) {
 	}
 }
 
+func TestDedupeStrings(t *testing.T) {
+	got := dedupeStrings([]string{"calendar", "calendar", " other "})
+	want := []string{"calendar", " other "}
+	if len(got) != len(want) {
+		t.Fatalf("dedupeStrings() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("dedupeStrings() = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestDropRedundantSources(t *testing.T) {
+	resolved := ResolvedSource{Version: "2.0", DownloadURL: "https://example.com/gh.zip"}
+
+	tests := []struct {
+		name     string
+		entry    CatalogEntry
+		wantKeys []string
+	}{
+		{
+			name: "single echo source is dropped",
+			entry: CatalogEntry{
+				Resolved: &resolved,
+				AvailableSources: map[string]ResolvedSource{
+					"github": resolved,
+				},
+			},
+			wantKeys: nil,
+		},
+		{
+			name: "alternative source is kept",
+			entry: CatalogEntry{
+				Resolved: &resolved,
+				AvailableSources: map[string]ResolvedSource{
+					"github":   resolved,
+					"totalcmd": {Version: "1.9", DownloadURL: "https://totalcmd.net/download.php?id=x"},
+				},
+			},
+			wantKeys: []string{"totalcmd"},
+		},
+		{
+			name: "same url but newer version is kept",
+			entry: CatalogEntry{
+				Resolved: &resolved,
+				AvailableSources: map[string]ResolvedSource{
+					"mirror": {Version: "2.1", DownloadURL: resolved.DownloadURL},
+				},
+			},
+			wantKeys: []string{"mirror"},
+		},
+		{
+			name: "source with empty version is treated as identical",
+			entry: CatalogEntry{
+				Resolved: &resolved,
+				AvailableSources: map[string]ResolvedSource{
+					"totalcmd": {Version: "", DownloadURL: resolved.DownloadURL},
+				},
+			},
+			wantKeys: nil,
+		},
+		{
+			name: "nothing dropped when resolved is nil",
+			entry: CatalogEntry{
+				Resolved: nil,
+				AvailableSources: map[string]ResolvedSource{
+					"totalcmd": {Version: "1.0", DownloadURL: "u"},
+				},
+			},
+			wantKeys: []string{"totalcmd"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := tt.entry
+			dropRedundantSources(&entry)
+
+			if tt.wantKeys == nil {
+				if len(entry.AvailableSources) != 0 {
+					t.Fatalf("AvailableSources = %v, want empty or nil", entry.AvailableSources)
+				}
+				return
+			}
+			if len(entry.AvailableSources) != len(tt.wantKeys) {
+				t.Fatalf("AvailableSources = %v, want keys %v", entry.AvailableSources, tt.wantKeys)
+			}
+			for _, k := range tt.wantKeys {
+				if _, ok := entry.AvailableSources[k]; !ok {
+					t.Errorf("expected source %q to be kept, got %v", k, entry.AvailableSources)
+				}
+			}
+		})
+	}
+}
+
 func TestNormalizeStr(t *testing.T) {
 	tests := []struct {
 		in, want string

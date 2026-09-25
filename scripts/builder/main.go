@@ -280,7 +280,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 			Arch:      cleanArch,
 			HasSource: hasSource,
 			Match: MatchRule{
-				Aliases:   []string{strings.ToLower(title), id},
+				Aliases:   dedupeStrings([]string{strings.ToLower(title), id}),
 				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
 			},
 			Source: SourceInfo{
@@ -289,9 +289,6 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 				DownloadURL: downloadURL,
 			},
 			Resolved: &resolved,
-			AvailableSources: map[string]ResolvedSource{
-				"totalcmd": resolved,
-			},
 		}
 
 		list = append(list, entry)
@@ -404,6 +401,38 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 	}, nil
 }
 
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+// dropRedundantSources removes available_sources entries that merely echo the
+// primary resolved source (same URL and version). The TotalPlug client already
+// skips such sources when listing alternatives (checker.go), so pruning them
+// at build time cuts roughly a third of the payload without behavior change.
+func dropRedundantSources(entry *CatalogEntry) {
+	if entry.Resolved == nil {
+		return
+	}
+	for name, src := range entry.AvailableSources {
+		if src.DownloadURL == entry.Resolved.DownloadURL &&
+			(src.Version == "" || src.Version == entry.Resolved.Version) {
+			delete(entry.AvailableSources, name)
+		}
+	}
+	if len(entry.AvailableSources) == 0 {
+		entry.AvailableSources = nil
+	}
+}
+
 func normalizeStr(s string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "_", ""), "-", ""))
 }
@@ -465,6 +494,7 @@ func main() {
 			Source:           m.Source,
 			AvailableSources: make(map[string]ResolvedSource),
 		}
+		entry.Match.Aliases = dedupeStrings(entry.Match.Aliases)
 
 		switch m.Source.Type {
 		case "github_release":
@@ -562,6 +592,8 @@ func main() {
 				entry.Resolved = &res
 			}
 		}
+
+		dropRedundantSources(&entry)
 
 		mergedMap[m.ID] = entry
 	}
