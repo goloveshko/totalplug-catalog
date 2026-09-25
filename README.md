@@ -14,11 +14,9 @@ Used as the primary update and discovery source for the [TotalPlug](https://gith
 
 The catalog is compiled and updated automatically every 6 hours via GitHub Actions:
 
-- **Snapshot (Resolved Versions & Assets):**  
+- **Snapshot (Resolved Versions & Assets, pretty-printed):**  
   `https://sergey.is-a.dev/totalplug-catalog/catalog.resolved.json`
-- **Raw Master Catalog:**  
-  `https://sergey.is-a.dev/totalplug-catalog/catalog.json`
-- **Minified CDN Version:**  
+- **Minified CDN Version (used by TotalPlug):**  
   `https://sergey.is-a.dev/totalplug-catalog/catalog.min.json`
 
 ---

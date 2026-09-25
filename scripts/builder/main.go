@@ -622,21 +622,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 1. Save formatted catalog.resolved.json
+	// 1. Save formatted catalog.resolved.json (human-readable snapshot)
 	resolvedFile := filepath.Join(*outDir, "catalog.resolved.json")
 	if err := saveJSON(resolvedFile, snapshot, true); err != nil {
 		logger.Error("Failed to write resolved catalog", "err", err)
 		os.Exit(1)
 	}
 
-	// 2. Save formatted catalog.json (alias for master catalog)
-	masterFile := filepath.Join(*outDir, "catalog.json")
-	if err := saveJSON(masterFile, snapshot, true); err != nil {
-		logger.Error("Failed to write master catalog", "err", err)
-		os.Exit(1)
-	}
-
-	// 3. Save compact catalog.min.json (without indentation for smaller payload)
+	// 2. Save compact catalog.min.json (without indentation for smaller payload)
 	minFile := filepath.Join(*outDir, "catalog.min.json")
 	if err := saveJSON(minFile, snapshot, false); err != nil {
 		logger.Error("Failed to write minified catalog", "err", err)
