@@ -2,10 +2,10 @@ name: Build & Deploy Catalog
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   schedule:
     # Runs every 6 hours at minute 0 (00:00, 06:00, 12:00, 18:00 UTC)
-    - cron: '0 */6 * * *'
+    - cron: "0 */6 * * *"
   # Allows triggering the workflow manually from the GitHub Actions UI tab
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
       - name: Setup Go Environment
         uses: actions/setup-go@v7
         with:
-          go-version-file: 'go.mod'
+          go-version-file: "go.mod"
           cache: true
 
       # Step 3: Run unit tests before publishing
@@ -46,17 +46,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 5: Configure GitHub Pages deployment metadata
+      # Step 5: Bundle the static landing page into the Pages artifact
+      - name: Bundle Landing Page
+        run: |
+          cp web/index.html dist/index.html
+          SYNC_TIME="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          SYNC_ISO="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          sed -i "s|{{BUILD_TIME}}|$SYNC_TIME|g" dist/index.html
+          sed -i "s|{{BUILD_TIME_ISO}}|$SYNC_ISO|g" dist/index.html
+
+      # Step 6: Configure GitHub Pages deployment metadata
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v6
 
-      # Step 6: Upload the compiled dist folder as a Pages artifact
+      # Step 7: Upload the compiled dist folder as a Pages artifact
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: 'dist'
+          path: "dist"
 
-      # Step 7: Deploy artifact to GitHub Pages CDN
+      # Step 8: Deploy artifact to GitHub Pages CDN
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
