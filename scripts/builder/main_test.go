@@ -284,3 +284,54 @@ func TestNormalizeStr(t *testing.T) {
 		}
 	}
 }
+
+func TestPickPrimarySource(t *testing.T) {
+	src := func(v string) ResolvedSource { return ResolvedSource{Version: v} }
+
+	t.Run("nil current picks highest, deterministic on tie", func(t *testing.T) {
+		sources := map[string]ResolvedSource{
+			"github":   src("2.0"),
+			"totalcmd": src("2.0"),
+		}
+		// Equal versions: sorted-name order makes "github" win every run.
+		for i := 0; i < 20; i++ {
+			got, from := pickPrimarySource(nil, sources)
+			if got == nil || got.Version != "2.0" || from != "github" {
+				t.Fatalf("pickPrimarySource() = (%v, %q), want (2.0, github)", got, from)
+			}
+		}
+	})
+
+	t.Run("higher version source is promoted", func(t *testing.T) {
+		current := src("1.0")
+		sources := map[string]ResolvedSource{"github": src("1.5")}
+		got, from := pickPrimarySource(&current, sources)
+		if got.Version != "1.5" || from != "github" {
+			t.Fatalf("pickPrimarySource() = (%v, %q), want (1.5, github)", got, from)
+		}
+	})
+
+	t.Run("current wins when no source is higher", func(t *testing.T) {
+		current := src("3.0")
+		sources := map[string]ResolvedSource{"github": src("2.0"), "mirror": src("3.0")}
+		got, from := pickPrimarySource(&current, sources)
+		if got != &current || from != "" {
+			t.Fatalf("pickPrimarySource() = (%v, %q), want unchanged current and empty name", got, from)
+		}
+	})
+
+	t.Run("empty sources keep current", func(t *testing.T) {
+		current := src("1.0")
+		got, from := pickPrimarySource(&current, nil)
+		if got != &current || from != "" {
+			t.Fatalf("pickPrimarySource() = (%v, %q), want unchanged current", got, from)
+		}
+	})
+
+	t.Run("nil current and no sources", func(t *testing.T) {
+		got, from := pickPrimarySource(nil, nil)
+		if got != nil || from != "" {
+			t.Fatalf("pickPrimarySource() = (%v, %q), want (nil, empty)", got, from)
+		}
+	})
+}

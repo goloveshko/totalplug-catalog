@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -488,6 +489,28 @@ func normalizeStr(s string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(s, "_", ""), "-", ""))
 }
 
+// pickPrimarySource selects the resolved source with the highest version among
+// the current primary and all available alternatives. Sources are visited in
+// sorted-name order so equal versions always resolve to the same winner and
+// repeated builds stay byte-stable. It returns the chosen source (which may be
+// the unchanged current one) and the name it was promoted from, or "" when the
+// current primary already wins.
+func pickPrimarySource(current *ResolvedSource, sources map[string]ResolvedSource) (*ResolvedSource, string) {
+	best := current
+	promotedFrom := ""
+
+	for _, name := range slices.Sorted(maps.Keys(sources)) {
+		src := sources[name]
+		if best == nil || CompareVersions(src.Version, best.Version) > 0 {
+			res := src
+			best = &res
+			promotedFrom = name
+		}
+	}
+
+	return best, promotedFrom
+}
+
 func main() {
 	pluginsDir := flag.String("plugins", "plugins", "Path to community plugins directory")
 	outDir := flag.String("out", "dist", "Output directory for compiled catalog")
@@ -627,24 +650,15 @@ func main() {
 			delete(mergedMap, k)
 		}
 
-		for srcName, srcInfo := range entry.AvailableSources {
-			if entry.Resolved == nil {
-				res := srcInfo
-				entry.Resolved = &res
-				continue
-			}
-
-			if CompareVersions(srcInfo.Version, entry.Resolved.Version) > 0 {
-				logger.Info("Promoting higher version source to primary resolved",
-					"plugin", m.ID,
-					"promoted_source", srcName,
-					"new_version", srcInfo.Version,
-					"previous_version", entry.Resolved.Version,
-				)
-				res := srcInfo
-				entry.Resolved = &res
-			}
+		promoted, promotedFrom := pickPrimarySource(entry.Resolved, entry.AvailableSources)
+		if promotedFrom != "" {
+			logger.Info("Promoting higher version source to primary resolved",
+				"plugin", m.ID,
+				"promoted_source", promotedFrom,
+				"new_version", promoted.Version,
+			)
 		}
+		entry.Resolved = promoted
 
 		dropRedundantSources(&entry)
 
