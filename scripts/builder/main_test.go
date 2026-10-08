@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -332,6 +333,47 @@ func TestPickPrimarySource(t *testing.T) {
 		got, from := pickPrimarySource(nil, nil)
 		if got != nil || from != "" {
 			t.Fatalf("pickPrimarySource() = (%v, %q), want (nil, empty)", got, from)
+		}
+	})
+}
+
+func TestSelectAssetURL(t *testing.T) {
+	assets := []GitHubAsset{
+		{Name: "plugin-1.0-win32.zip", BrowserDownloadURL: "u/win32.zip"},
+		{Name: "plugin-1.0-x64.zip", BrowserDownloadURL: "u/x64.zip"},
+		{Name: "Source code.zip", BrowserDownloadURL: "u/source.zip"},
+	}
+
+	t.Run("nil pattern prefers first archive", func(t *testing.T) {
+		if got := selectAssetURL(assets, nil); got != "u/win32.zip" {
+			t.Errorf("selectAssetURL() = %q, want u/win32.zip", got)
+		}
+	})
+
+	t.Run("pattern matches specific asset", func(t *testing.T) {
+		re := regexp.MustCompile(`x64\.zip$`)
+		if got := selectAssetURL(assets, re); got != "u/x64.zip" {
+			t.Errorf("selectAssetURL() = %q, want u/x64.zip", got)
+		}
+	})
+
+	t.Run("unmatched pattern yields empty, no fallback", func(t *testing.T) {
+		re := regexp.MustCompile(`\.msi$`)
+		if got := selectAssetURL(assets, re); got != "" {
+			t.Errorf("selectAssetURL() = %q, want empty (no assets[0] fallback)", got)
+		}
+	})
+
+	t.Run("nil pattern falls back to first asset when no archive", func(t *testing.T) {
+		nonArchive := []GitHubAsset{{Name: "checksum.txt", BrowserDownloadURL: "u/checksum.txt"}}
+		if got := selectAssetURL(nonArchive, nil); got != "u/checksum.txt" {
+			t.Errorf("selectAssetURL() = %q, want u/checksum.txt", got)
+		}
+	})
+
+	t.Run("empty assets", func(t *testing.T) {
+		if got := selectAssetURL(nil, nil); got != "" {
+			t.Errorf("selectAssetURL() = %q, want empty", got)
 		}
 	})
 }

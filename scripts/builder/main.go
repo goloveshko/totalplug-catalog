@@ -381,7 +381,33 @@ func detectArchFromAssets(names []string) string {
 	}
 }
 
-func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghToken string) (*ResolvedSource, error) {
+// selectAssetURL picks the download URL from release assets. When pattern is
+// non-nil it is authoritative: the first matching asset wins and no fallback is
+// applied, so an unmatched pattern yields "" rather than a wrong file. With a
+// nil pattern it prefers the first .zip/.rar, falling back to the first asset.
+func selectAssetURL(assets []GitHubAsset, pattern *regexp.Regexp) string {
+	if pattern != nil {
+		for _, asset := range assets {
+			if pattern.MatchString(asset.Name) {
+				return asset.BrowserDownloadURL
+			}
+		}
+		return ""
+	}
+
+	for _, asset := range assets {
+		n := strings.ToLower(asset.Name)
+		if strings.HasSuffix(n, ".zip") || strings.HasSuffix(n, ".rar") {
+			return asset.BrowserDownloadURL
+		}
+	}
+	if len(assets) > 0 {
+		return assets[0].BrowserDownloadURL
+	}
+	return ""
+}
+
+func resolveGitHubRelease(ctx context.Context, logger *slog.Logger, repo string, pattern string, ghToken string) (*ResolvedSource, error) {
 	cleanRepo := strings.TrimPrefix(repo, "https://github.com/")
 	cleanRepo = strings.TrimSuffix(cleanRepo, "/")
 
@@ -426,20 +452,16 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 		}
 	}
 
-	for _, asset := range rel.Assets {
-		if compiledRegexp != nil {
-			if compiledRegexp.MatchString(asset.Name) {
-				downloadURL = asset.BrowserDownloadURL
-				break
-			}
-		} else if strings.HasSuffix(strings.ToLower(asset.Name), ".zip") || strings.HasSuffix(strings.ToLower(asset.Name), ".rar") {
-			downloadURL = asset.BrowserDownloadURL
-			break
+	if compiledRegexp != nil {
+		// An explicit pattern is authoritative: never fall back to assets[0],
+		// which is often "Source code.zip" or a checksum/signature file.
+		downloadURL = selectAssetURL(rel.Assets, compiledRegexp)
+		if downloadURL == "" {
+			logger.Warn("asset_pattern matched no release asset, leaving download_url empty",
+				"repo", cleanRepo, "pattern", pattern, "release", rel.TagName)
 		}
-	}
-
-	if downloadURL == "" && len(rel.Assets) > 0 {
-		downloadURL = rel.Assets[0].BrowserDownloadURL
+	} else {
+		downloadURL = selectAssetURL(rel.Assets, nil)
 	}
 
 	var assetNames []string
@@ -584,7 +606,7 @@ func main() {
 
 		switch m.Source.Type {
 		case "github_release":
-			resolved, err := resolveGitHubRelease(ctx, m.Source.Repo, m.Source.AssetPattern, ghToken)
+			resolved, err := resolveGitHubRelease(ctx, logger, m.Source.Repo, m.Source.AssetPattern, ghToken)
 			if err != nil {
 				logger.Error("Failed resolving GitHub release", "plugin", m.ID, "repo", m.Source.Repo, "err", err)
 			} else {
