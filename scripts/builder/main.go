@@ -419,7 +419,11 @@ func resolveGitHubRelease(ctx context.Context, repo string, pattern string, ghTo
 	var downloadURL string
 	var compiledRegexp *regexp.Regexp
 	if pattern != "" {
-		compiledRegexp, _ = regexp.Compile(pattern)
+		var err error
+		compiledRegexp, err = regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("compiling asset_pattern %q: %w", pattern, err)
+		}
 	}
 
 	for _, asset := range rel.Assets {
