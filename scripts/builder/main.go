@@ -295,6 +295,12 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		list = append(list, entry)
 	}
 
+	// A mid-stream read error or a CP1251 decode failure stops the scanner
+	// early; without this check we would publish a silently truncated catalog.
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading totalcmd list stream: %w", err)
+	}
+
 	return list, nil
 }
 
