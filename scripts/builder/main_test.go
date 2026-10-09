@@ -277,6 +277,34 @@ func TestLoadCommunityManifests(t *testing.T) {
 	})
 }
 
+func TestPickPreferredLegacy(t *testing.T) {
+	entry := func(id, ver string) CatalogEntry {
+		return CatalogEntry{ID: id, Resolved: &ResolvedSource{Version: ver}}
+	}
+
+	t.Run("empty returns nil", func(t *testing.T) {
+		if got := pickPreferredLegacy(nil); got != nil {
+			t.Fatalf("pickPreferredLegacy(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("highest version wins", func(t *testing.T) {
+		matches := []CatalogEntry{entry("totalcmd_a", "1.0"), entry("totalcmd_b", "2.5"), entry("totalcmd_c", "2.0")}
+		got := pickPreferredLegacy(matches)
+		if got == nil || got.ID != "totalcmd_b" {
+			t.Fatalf("pickPreferredLegacy() = %v, want totalcmd_b", got)
+		}
+	})
+
+	t.Run("version tie breaks on lowest id", func(t *testing.T) {
+		matches := []CatalogEntry{entry("totalcmd_zulu", "3.0"), entry("totalcmd_alpha", "3.0")}
+		got := pickPreferredLegacy(matches)
+		if got == nil || got.ID != "totalcmd_alpha" {
+			t.Fatalf("pickPreferredLegacy() = %v, want totalcmd_alpha", got)
+		}
+	})
+}
+
 func TestDetectArchFromAssets(t *testing.T) {
 	tests := []struct {
 		name  string

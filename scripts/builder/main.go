@@ -563,6 +563,25 @@ func pickPrimarySource(current *ResolvedSource, sources map[string]ResolvedSourc
 	return best, promotedFrom
 }
 
+// pickPreferredLegacy returns the highest-version legacy base-feed entry whose
+// id ties back deterministically (lowest id wins on version ties). matches is
+// already filtered to entries with a non-nil Resolved source, so the returned
+// pointer always carries a usable alternative download.
+func pickPreferredLegacy(matches []CatalogEntry) *CatalogEntry {
+	if len(matches) == 0 {
+		return nil
+	}
+	best := 0
+	for i := range matches {
+		a, b := matches[i], matches[best]
+		if c := CompareVersions(a.Resolved.Version, b.Resolved.Version); c > 0 ||
+			(c == 0 && strings.Compare(a.ID, b.ID) < 0) {
+			best = i
+		}
+	}
+	return &matches[best]
+}
+
 func main() {
 	pluginsDir := flag.String("plugins", "plugins", "Path to community plugins directory")
 	outDir := flag.String("out", "dist", "Output directory for compiled catalog")
@@ -661,6 +680,7 @@ func main() {
 		normTotalcmdID := normalizeStr(m.Source.TotalcmdID)
 
 		var keysToDelete []string
+		var matchedLegacy []CatalogEntry
 		for key, existing := range mergedMap {
 			if !strings.HasPrefix(key, "totalcmd_") {
 				continue
@@ -689,10 +709,7 @@ func main() {
 			if isDuplicate {
 				keysToDelete = append(keysToDelete, key)
 				if existing.Resolved != nil {
-					entry.AvailableSources["totalcmd"] = *existing.Resolved
-					if entry.Arch == "" {
-						entry.Arch = existing.Arch
-					}
+					matchedLegacy = append(matchedLegacy, existing)
 				}
 			}
 		}
@@ -700,6 +717,16 @@ func main() {
 		for _, k := range keysToDelete {
 			logger.Info("Purged duplicate legacy totalcmd entry", "purged_key", k, "replaced_by", m.ID)
 			delete(mergedMap, k)
+		}
+
+		// Several legacy rows can collapse onto one community manifest; pick a
+		// stable winner (highest version, then lowest id) so the retained
+		// "totalcmd" alternative does not depend on map iteration order.
+		if chosen := pickPreferredLegacy(matchedLegacy); chosen != nil {
+			entry.AvailableSources["totalcmd"] = *chosen.Resolved
+			if entry.Arch == "" {
+				entry.Arch = chosen.Arch
+			}
 		}
 
 		promoted, promotedFrom := pickPrimarySource(entry.Resolved, entry.AvailableSources)
