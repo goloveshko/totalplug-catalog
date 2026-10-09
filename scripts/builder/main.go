@@ -336,6 +336,14 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 		}
 		seenIDs[m.ID] = path
 
+		// Enforce the plugins/<type>/<id>.json layout: a manifest sitting in a
+		// recognized type folder must declare that same type, so a WLX plugin
+		// accidentally dropped into plugins/wcx/ fails the build instead of
+		// being filed under the wrong category.
+		if want, ok := pluginTypeFromDir(path); ok && m.Type != want {
+			return fmt.Errorf("%s: type %q does not match its plugins/%s/ directory", path, m.Type, strings.ToLower(want))
+		}
+
 		manifests = append(manifests, m)
 		return nil
 	})
@@ -347,6 +355,18 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 		return nil, err
 	}
 	return manifests, nil
+}
+
+// pluginTypeFromDir reports the plugin type implied by a manifest's parent
+// directory (e.g. ".../wlx/foo.json" -> "WLX"). The bool is false for unknown
+// directories, so the check only applies to the four recognized type folders.
+func pluginTypeFromDir(path string) (string, bool) {
+	switch dir := strings.ToUpper(filepath.Base(filepath.Dir(path))); dir {
+	case "WCX", "WLX", "WFX", "WDX":
+		return dir, true
+	default:
+		return "", false
+	}
 }
 
 // detectArchFromAssets infers supported architectures from release asset

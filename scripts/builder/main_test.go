@@ -239,6 +239,42 @@ func TestLoadCommunityManifests(t *testing.T) {
 			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 0, nil", len(got), err)
 		}
 	})
+
+	writeTypedManifest := func(t *testing.T, dir, file, id, typ string) {
+		t.Helper()
+		content := `{"id":"` + id + `","name":"` + id + `","type":"` + typ +
+			`","description":"d","match":{"filenames":["a.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("type matching its directory loads", func(t *testing.T) {
+		root := t.TempDir()
+		sub := filepath.Join(root, "wlx")
+		if err := os.Mkdir(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeTypedManifest(t, sub, "foo.json", "foo", "WLX")
+
+		got, err := loadCommunityManifests(root)
+		if err != nil || len(got) != 1 {
+			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 1, nil", len(got), err)
+		}
+	})
+
+	t.Run("type not matching its directory fails", func(t *testing.T) {
+		root := t.TempDir()
+		sub := filepath.Join(root, "wcx")
+		if err := os.Mkdir(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		writeTypedManifest(t, sub, "foo.json", "foo", "WLX")
+
+		if _, err := loadCommunityManifests(root); err == nil {
+			t.Fatal("expected error for type/directory mismatch, got nil")
+		}
+	})
 }
 
 func TestDetectArchFromAssets(t *testing.T) {
