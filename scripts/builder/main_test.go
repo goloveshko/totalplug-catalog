@@ -483,3 +483,69 @@ func TestBuildMinSnapshot(t *testing.T) {
 		t.Errorf("min snapshot metadata not preserved: %+v", min)
 	}
 }
+
+// TestCatalogMinContract pins the exact JSON key names the TotalPlug checker
+// decodes (checker.go reads id/name/match/resolved/available_sources/arch/
+// description). Renaming any of these in the builder would silently decode to
+// zero values on every client, so this is the producer half of the two-repo
+// contract; the consumer half lives in totalplug's catalog decode test.
+func TestCatalogMinContract(t *testing.T) {
+	entry := CatalogEntry{
+		ID: "plugin", Name: "Plugin", Type: "WLX", Category: "Viewer",
+		Description: "d", Authors: []string{"a"}, Homepage: "https://h", License: "MIT",
+		Arch: "x32+x64", HasSource: true,
+		Match:            MatchRule{Aliases: []string{"al"}, Filenames: []string{"a.wlx"}},
+		Source:           &SourceInfo{Type: "github_release", Repo: "o/r", DownloadURL: "u"},
+		Resolved:         &ResolvedSource{Version: "1.0", DownloadURL: "u", WebURL: "w", ResolvedFrom: "github"},
+		AvailableSources: map[string]ResolvedSource{"totalcmd": {Version: "0.9", DownloadURL: "t"}},
+	}
+	full := CatalogSnapshot{Version: 1, Plugins: []CatalogEntry{entry}}
+
+	keySet := func(t *testing.T, e CatalogEntry) map[string]any {
+		t.Helper()
+		b, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	minEntry := keySet(t, buildMinSnapshot(full).Plugins[0])
+
+	for _, key := range []string{"id", "name", "match", "resolved", "available_sources", "arch", "description"} {
+		if _, ok := minEntry[key]; !ok {
+			t.Errorf("min entry missing client key %q", key)
+		}
+	}
+	if _, ok := minEntry["source"]; ok {
+		t.Error("min entry must not carry the source declaration block")
+	}
+
+	resolved, ok := minEntry["resolved"].(map[string]any)
+	if !ok {
+		t.Fatal("min entry 'resolved' is not an object")
+	}
+	for _, key := range []string{"version", "download_url", "web_url", "resolved_from"} {
+		if _, ok := resolved[key]; !ok {
+			t.Errorf("resolved missing client key %q", key)
+		}
+	}
+	match, ok := minEntry["match"].(map[string]any)
+	if !ok {
+		t.Fatal("min entry 'match' is not an object")
+	}
+	for _, key := range []string{"filenames", "aliases"} {
+		if _, ok := match[key]; !ok {
+			t.Errorf("match missing client key %q", key)
+		}
+	}
+
+	// The human-readable full snapshot keeps source provenance.
+	if _, ok := keySet(t, full.Plugins[0])["source"]; !ok {
+		t.Error("catalog.resolved.json entry must retain the source block")
+	}
+}
