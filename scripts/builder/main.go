@@ -75,7 +75,7 @@ type CatalogEntry struct {
 	Arch             string                    `json:"arch,omitempty"`
 	HasSource        bool                      `json:"has_source,omitempty"`
 	Match            MatchRule                 `json:"match"`
-	Source           SourceInfo                `json:"source"`
+	Source           *SourceInfo               `json:"source,omitempty"`
 	Resolved         *ResolvedSource           `json:"resolved,omitempty"`
 	AvailableSources map[string]ResolvedSource `json:"available_sources,omitempty"`
 }
@@ -284,7 +284,7 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 				Aliases:   dedupeStrings([]string{strings.ToLower(title), id}),
 				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
 			},
-			Source: SourceInfo{
+			Source: &SourceInfo{
 				Type:        "totalcmd_net",
 				TotalcmdID:  id,
 				DownloadURL: downloadURL,
@@ -638,7 +638,7 @@ func main() {
 			Homepage:         homepage,
 			License:          m.License,
 			Match:            m.Match,
-			Source:           m.Source,
+			Source:           &m.Source,
 			AvailableSources: make(map[string]ResolvedSource),
 		}
 		entry.Match.Aliases = dedupeStrings(entry.Match.Aliases)
@@ -775,9 +775,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 2. Save compact catalog.min.json (without indentation for smaller payload)
+	// 2. Save compact catalog.min.json (client contract: source declaration
+	// dropped; see buildMinSnapshot). No indentation for a smaller payload.
 	minFile := filepath.Join(*outDir, "catalog.min.json")
-	if err := saveJSON(minFile, snapshot, false); err != nil {
+	if err := saveJSON(minFile, buildMinSnapshot(snapshot), false); err != nil {
 		logger.Error("Failed to write minified catalog", "err", err)
 		os.Exit(1)
 	}
@@ -786,6 +787,22 @@ func main() {
 		"output_dir", *outDir,
 		"total_plugins", snapshot.TotalCount,
 	)
+}
+
+// buildMinSnapshot projects the full snapshot into the client-facing
+// catalog.min.json by dropping each entry's "source" declaration block. The
+// TotalPlug checker consumes only resolved/available_sources/match/arch/
+// description, so source is provenance for the human-readable
+// catalog.resolved.json alone; omitting it removes the download_url echo and
+// trims ~19% of the payload. The input snapshot is left untouched.
+func buildMinSnapshot(s CatalogSnapshot) CatalogSnapshot {
+	min := s
+	min.Plugins = make([]CatalogEntry, len(s.Plugins))
+	for i, p := range s.Plugins {
+		p.Source = nil
+		min.Plugins[i] = p
+	}
+	return min
 }
 
 // saveJSON encodes any data struct into a JSON file with proper error handling and immediate resource cleanup.

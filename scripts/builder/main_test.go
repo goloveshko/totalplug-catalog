@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -440,4 +442,44 @@ func TestSelectAssetURL(t *testing.T) {
 			t.Errorf("selectAssetURL() = %q, want empty", got)
 		}
 	})
+}
+
+func TestBuildMinSnapshot(t *testing.T) {
+	full := CatalogSnapshot{
+		Version:    1,
+		TotalCount: 2,
+		Plugins: []CatalogEntry{
+			{ID: "a", Source: &SourceInfo{Type: "github_release", Repo: "x/y", DownloadURL: "u"}},
+			{ID: "b", Source: &SourceInfo{Type: "totalcmd_net", TotalcmdID: "b", DownloadURL: "d"}},
+		},
+	}
+
+	min := buildMinSnapshot(full)
+
+	if len(min.Plugins) != 2 {
+		t.Fatalf("min has %d plugins, want 2", len(min.Plugins))
+	}
+	for _, p := range min.Plugins {
+		if p.Source != nil {
+			t.Errorf("min entry %q still carries a source block", p.ID)
+		}
+	}
+	// buildMinSnapshot must not mutate the full snapshot used for catalog.resolved.json.
+	for _, p := range full.Plugins {
+		if p.Source == nil {
+			t.Errorf("full entry %q lost its source", p.ID)
+		}
+	}
+	// The emitted min JSON must contain no "source" key at all.
+	b, err := json.Marshal(min)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"source"`) {
+		t.Errorf("min catalog JSON unexpectedly contains a source key: %s", b)
+	}
+	if min.Version != full.Version || min.TotalCount != full.TotalCount ||
+		!min.GeneratedAt.Equal(full.GeneratedAt) {
+		t.Errorf("min snapshot metadata not preserved: %+v", min)
+	}
 }
