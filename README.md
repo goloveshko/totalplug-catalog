@@ -81,6 +81,28 @@ Adding a plugin takes less than 2 minutes:
 | `direct_url`     | Fixed download link with static version                         | `download_url`, `version`          |
 | `totalcmd_net`   | Links to existing totalcmd.net ID                               | `totalcmd_id`                      |
 
+A plugin gets one address per source. There is no field for mirrors, and the next section explains why that is intentional.
+
+---
+
+## 🪞 Mirrors
+
+Mirrors are deliberately **not** catalog data. A mirror list would have to be built by fetching
+roughly 1200 plugin pages on every build, and an entry nobody revalidates is a dead link with a
+version number attached to it — so the schema accepts sources, not backups of sources.
+
+Instead, TotalPlug finds the mirror when it is actually needed. Once every address the catalog
+names has failed to deliver an archive, and when the failing address is a totalcmd.net download
+link, the updater opens that plugin's plugring page from the user's own machine and retries the
+`Mirror` links it finds there: https only, and only from a short allowlist of trusted hosts
+(`wincmd.ru`). The lookup happens once per broken download rather than for the whole catalog, and
+any failure in it leaves the ordinary error, which names the plugin page.
+
+What this means for a contribution: if a plugin's totalcmd.net download counter points at a host
+that no longer answers, leave the entry as it is — the update still works through the search
+above. Fix the entry when the plugin's actual home moved (new repo, new upstream version), not
+when one mirror went down.
+
 ---
 
 ## 🙏 Credits & Acknowledgments
