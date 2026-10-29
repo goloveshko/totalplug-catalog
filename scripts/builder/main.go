@@ -277,7 +277,7 @@ func cleanEntry(id, rawTitle, pluginType string) (name, description string, file
 	return strings.TrimSpace(name), description, []string{strings.ToLower(base) + ext}
 }
 
-func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
+func fetchTotalCmdBaseList(ctx context.Context, logger *slog.Logger) ([]CatalogEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TotalCmdListURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -368,7 +368,76 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		return nil, fmt.Errorf("reading totalcmd list stream: %w", err)
 	}
 
-	return list, nil
+	return mergeSameFileEntries(logger, list), nil
+}
+
+// mergeSameFileEntries folds the entries that name the same plugin file into
+// one: the site keeps a page per upload, and the three pages of CVSBrowser
+// are one plugin and not three.
+//
+// The newest version wins, and a tie goes to the lowest id so the published
+// catalog does not depend on the order the feed happens to list things in.
+// The aliases and the file names of the folded pages are kept, so a plugin
+// filed under an older name is still found.
+func mergeSameFileEntries(logger *slog.Logger, entries []CatalogEntry) []CatalogEntry {
+	groups := make(map[string][]int)
+	for i, e := range entries {
+		if len(e.Match.Filenames) == 0 {
+			continue
+		}
+		key := strings.ToLower(e.Match.Filenames[0])
+		groups[key] = append(groups[key], i)
+	}
+
+	keep := make(map[int]bool, len(entries))
+	for _, idxs := range groups {
+		if len(idxs) < 2 {
+			keep[idxs[0]] = true
+			continue
+		}
+
+		best := idxs[0]
+		for _, i := range idxs[1:] {
+			if newerEntry(entries[i], entries[best]) {
+				best = i
+			}
+		}
+		keep[best] = true
+
+		for _, i := range idxs {
+			if i == best {
+				continue
+			}
+			entries[best].Match.Aliases = dedupeStrings(append(entries[best].Match.Aliases, entries[i].Match.Aliases...))
+			entries[best].Match.Filenames = dedupeStrings(append(entries[best].Match.Filenames, entries[i].Match.Filenames...))
+			logger.Info("Merged legacy entry into the same plugin file",
+				"merged", entries[i].ID, "into", entries[best].ID, "file", entries[best].Match.Filenames[0])
+		}
+	}
+
+	out := make([]CatalogEntry, 0, len(entries))
+	for i, e := range entries {
+		if keep[i] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// newerEntry reports whether a is the newer of two entries: the higher
+// version wins, and a version tie goes to the lower id.
+func newerEntry(a, b CatalogEntry) bool {
+	av, bv := "", ""
+	if a.Resolved != nil {
+		av = a.Resolved.Version
+	}
+	if b.Resolved != nil {
+		bv = b.Resolved.Version
+	}
+	if c := CompareVersions(av, bv); c != 0 {
+		return c > 0
+	}
+	return strings.Compare(a.ID, b.ID) < 0
 }
 
 func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
@@ -669,7 +738,7 @@ func main() {
 	}
 	logger.Info("Discovered community manifests", "count", len(communityManifests))
 
-	baseEntries, err := fetchTotalCmdBaseList(ctx)
+	baseEntries, err := fetchTotalCmdBaseList(ctx, logger)
 	if err != nil {
 		// Publishing without the base feed would ship a catalog of only
 		// community plugins and wipe ~1200 entries for all clients.

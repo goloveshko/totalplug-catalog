@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -200,6 +202,58 @@ func TestCleanEntry(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMergeSameFileEntries(t *testing.T) {
+	entry := func(id, name, file, version string) CatalogEntry {
+		return CatalogEntry{
+			ID:   id,
+			Name: name,
+			Match: MatchRule{
+				Aliases:   []string{strings.ToLower(name), id},
+				Filenames: []string{file},
+			},
+			Resolved: &ResolvedSource{Version: version},
+		}
+	}
+
+	entries := []CatalogEntry{
+		entry("totalcmd_CVSBrowser", "CVSBrowser", "cvsbrowser.wfx", "1.0.4"),
+		entry("totalcmd_CVSBrowser_1.0.3", "CVSBrowser", "cvsbrowser.wfx", "1.0.3"),
+		entry("totalcmd_CVSBrowser_1.0.5", "CVSBrowser", "cvsbrowser.wfx", "1.2.0"),
+		entry("totalcmd_cudalister", "CudaLister", "cudalister.wlx", "3.1.6"),
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	got := mergeSameFileEntries(logger, entries)
+
+	if len(got) != 2 {
+		t.Fatalf("mergeSameFileEntries() = %d entries, want 2: %v", len(got), got)
+	}
+
+	var cvs *CatalogEntry
+	for i := range got {
+		if got[i].ID == "totalcmd_CVSBrowser_1.0.5" {
+			cvs = &got[i]
+		}
+	}
+	if cvs == nil {
+		t.Fatalf("mergeSameFileEntries() dropped the newest CVSBrowser: %v", got)
+	}
+	if cvs.Resolved.Version != "1.2.0" {
+		t.Errorf("merged CVSBrowser version = %q, want 1.2.0", cvs.Resolved.Version)
+	}
+	for _, alias := range []string{"cvsbrowser", "totalcmd_CVSBrowser_1.0.3", "totalcmd_CVSBrowser"} {
+		found := false
+		for _, a := range cvs.Match.Aliases {
+			if a == alias {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("merged CVSBrowser lost the alias %q: %v", alias, cvs.Match.Aliases)
+		}
 	}
 }
 
