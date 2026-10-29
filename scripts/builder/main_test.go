@@ -186,6 +186,14 @@ func TestCleanEntry(t *testing.T) {
 			wantName:   "CudaLister",
 			wantFiles:  []string{"cudalister.wlx"},
 		},
+		{
+			name:       "the site's namespace is not the file name",
+			id:         "wlx_TCSumatraPDF",
+			title:      "TC SumatraPDF Plugin",
+			pluginType: "WLX",
+			wantName:   "TC SumatraPDF Plugin",
+			wantFiles:  []string{"tcsumatrapdf.wlx"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -847,5 +855,57 @@ func TestParseVersionNumbers(t *testing.T) {
 func TestTotalcmdPluginPageURL(t *testing.T) {
 	if got, want := totalcmdPluginPageURL("PEViewer3"), "https://totalcmd.net/plugins/PEViewer3"; got != want {
 		t.Errorf("totalcmdPluginPageURL() = %q, want %q", got, want)
+	}
+}
+
+func TestFeedArch(t *testing.T) {
+	tests := []struct {
+		name          string
+		parts         []string
+		wantArch      string
+		wantHasSource bool
+	}{
+		{
+			name:          "the 64-bit build lives in the second field",
+			parts:         []string{"oilister", "uLister", "4.0.0", "20.09.2011", "lister", "x32", "x64", "src"},
+			wantArch:      "x32+x64",
+			wantHasSource: true,
+		},
+		{
+			name:     "both builds in one field",
+			parts:    []string{"fileinfo", "FileInfo", "2.23", "18.05.2017", "lister", "x32+x64", "", ""},
+			wantArch: "x32+x64",
+		},
+		{
+			name:          "the source lives in the third field",
+			parts:         []string{"CudaLister", "CudaLister", "1.8.6.1", "5.04.2026", "lister", "x32+x64", "", "src"},
+			wantArch:      "x32+x64",
+			wantHasSource: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arch, hasSource := parseTotalCmdArch(feedArch(tt.parts))
+			if arch != tt.wantArch || hasSource != tt.wantHasSource {
+				t.Fatalf("feedArch() = (%q, %v), want (%q, %v)", arch, hasSource, tt.wantArch, tt.wantHasSource)
+			}
+		})
+	}
+}
+
+func TestStripTypePrefix(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"wlx_TCSumatraPDF", "TCSumatraPDF"},
+		{"wdx_anytag", "anytag"},
+		{"WCX_PDB", "PDB"},
+		{"peviewer", "peviewer"},
+		{"wlx_fb2_v2", "fb2_v2"},
+	}
+
+	for _, tt := range tests {
+		if got := stripTypePrefix(tt.in); got != tt.want {
+			t.Errorf("stripTypePrefix(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }

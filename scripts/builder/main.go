@@ -203,6 +203,24 @@ func parseTotalCmdArch(rawArch string) (cleanArch string, hasSource bool) {
 	return cleanArch, hasSource
 }
 
+// feedArch joins the build fields of a feed row. The architectures live in
+// two fields and the source flag in a third: "lister|x32|x64|src" is a
+// plugin with a 32-bit and a 64-bit build whose source is published too.
+// Reading only the first field called the 64-bit build of uLister a 32-bit
+// plugin, and the client then refused to serve it to an installed 64-bit
+// copy.
+func feedArch(parts []string) string {
+	values := make([]string, 0, 3)
+	for _, i := range []int{5, 6, 7} {
+		if i < len(parts) {
+			if value := strings.TrimSpace(parts[i]); value != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	return strings.Join(values, "+")
+}
+
 func classifyPluginType(category string) string {
 	// The totalcmd.net feed labels categories as "fsplugin", "multiarc",
 	// "synplus", etc. — map them to real TC plugin types.
@@ -226,6 +244,16 @@ func classifyPluginType(category string) string {
 // "CVSBrowser_1.0.5", "pbl_tc_utils_1.0.0". A plain number is left alone —
 // "deb_64" and "PdbView_2" name other things, not other versions.
 var versionSuffixRE = regexp.MustCompile(`_\d+(\.\d+)+$`)
+
+// typePrefixRE matches the plugin type the site puts in front of some ids:
+// "wlx_TCSumatraPDF" is the plugin "TCSumatraPDF" filed under the site's own
+// namespace, and the prefix is not how the file is named.
+var typePrefixRE = regexp.MustCompile(`(?i)^(wlx|wcx|wfx|wdx)_`)
+
+// stripTypePrefix takes the site's namespace off an id.
+func stripTypePrefix(id string) string {
+	return typePrefixRE.ReplaceAllString(id, "")
+}
 
 // splitTitle splits a scraped title into the plugin's name and the
 // description the site glued onto it. The site writes the description after
@@ -279,7 +307,7 @@ func cleanEntry(id, rawTitle, pluginType string) (name, description string, file
 	// The id carries the plugin's name, sometimes with the version of the
 	// upload glued on ("CVSBrowser_1.0.5") and sometimes with the extension
 	// already ("mthumbs.wlx").
-	base := versionSuffixRE.ReplaceAllString(id, "")
+	base := versionSuffixRE.ReplaceAllString(stripTypePrefix(id), "")
 	if strings.HasSuffix(strings.ToLower(base), ext) {
 		return strings.TrimSpace(name), description, []string{strings.ToLower(base)}
 	}
@@ -326,7 +354,9 @@ func fetchTotalCmdBaseList(ctx context.Context, logger *slog.Logger) ([]CatalogE
 		ver := strings.TrimSpace(parts[2])
 		rawDate := strings.TrimSpace(parts[3])
 		category := strings.TrimSpace(parts[4])
-		rawArch := strings.TrimSpace(parts[5])
+
+		// The feed carries the builds in two fields and the source in a third.
+		rawArch := feedArch(parts)
 
 		pType := classifyPluginType(category)
 
@@ -357,7 +387,10 @@ func fetchTotalCmdBaseList(ctx context.Context, logger *slog.Logger) ([]CatalogE
 			Arch:        cleanArch,
 			HasSource:   hasSource,
 			Match: MatchRule{
-				Aliases:   dedupeStrings([]string{strings.ToLower(name), id}),
+				// The id without the site's namespace is the name the ini
+				// knows the plugin by: "wlx_TCSumatraPDF" is filed under
+				// "TCSumatraPDF" there, and the client looks it up by that.
+				Aliases:   dedupeStrings([]string{strings.ToLower(name), id, stripTypePrefix(id)}),
 				Filenames: files,
 			},
 			Source: &SourceInfo{
