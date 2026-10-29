@@ -520,12 +520,18 @@ func pluginNameKey(name string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(name))), " ")
 }
 
+// uploadVersionRE matches the number an upload's id ends with: "PEViewer3",
+// "TCIrfanViewPlugin_2.0", "wlx_fb2_v2".
+var uploadVersionRE = regexp.MustCompile(`(?i)(?:^|[._-])v?\d+(?:\.\d+)*$`)
+
 // samePluginIDs reports whether two site ids name the same plugin: one is the
-// other with the number of the upload glued on ("peviewer" and "peviewer3").
+// other with the number of the upload glued on.
 //
 // The bit marker is not a number of an upload — "archview64" is the 64-bit
 // build of "archview" — so an id that only grows by the marker names another
-// plugin, and the client tells the two builds apart by that marker.
+// plugin, and the client tells the two builds apart by that marker. A word
+// there ("beta", "new", "patched") names another channel of the plugin, not
+// another upload of it, and the ids stay apart.
 func samePluginIDs(a, b string) bool {
 	short, long := strings.ToLower(a), strings.ToLower(b)
 	if short == long {
@@ -538,13 +544,13 @@ func samePluginIDs(a, b string) bool {
 		return false
 	}
 	rest := long[len(short):]
-	if rest == "64" || rest == "32" {
+	if rest == "" {
 		return false
 	}
-	if !strings.ContainsAny(rest, "0123456789") {
+	if strings.HasSuffix(rest, "64") || strings.HasSuffix(rest, "32") {
 		return false
 	}
-	return strings.Trim(rest, "0123456789.") == ""
+	return uploadVersionRE.MatchString(rest)
 }
 
 // mergeSamePluginEntries folds an older upload of a plugin into the newer

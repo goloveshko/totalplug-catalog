@@ -726,6 +726,8 @@ func TestSamePluginIDs(t *testing.T) {
 		{"totalcmd_versions", "totalcmd_versions2", true},
 		{"totalcmd_xpiinfo", "totalcmd_xpiinfo2", true},
 		{"totalcmd_envvars", "totalcmd_envvars2", true},
+		{"totalcmd_TCIrfanView", "totalcmd_TCIrfanViewPlugin_2.0", true},
+		{"totalcmd_wlx_fb2", "totalcmd_wlx_fb2_v2", true},
 		// The bit marker is not a number of an upload: the two builds of one
 		// plugin must stay apart.
 		{"totalcmd_archview", "totalcmd_archview64", false},
@@ -733,6 +735,10 @@ func TestSamePluginIDs(t *testing.T) {
 		{"totalcmd_mover", "totalcmd_mover64", false},
 		{"totalcmd_7zipInfo", "totalcmd_7zipInfo64", false},
 		{"totalcmd_deb_64", "totalcmd_deb", false},
+		// A word is another channel of the plugin, not another upload of it.
+		{"totalcmd_totalcmd", "totalcmd_totalcmdbeta", false},
+		{"totalcmd_choiceeditor", "totalcmd_choiceeditor_patched", false},
+		{"totalcmd_cudatext", "totalcmd_cudatext_addons", false},
 		// Not a number glued on: another plugin that merely sounds alike.
 		{"totalcmd_s3", "totalcmd_s3browser", false},
 		{"totalcmd_CVSBrowser_1.0.3", "totalcmd_CVSBrowser_1.0.5", false},
