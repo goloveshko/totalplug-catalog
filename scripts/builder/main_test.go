@@ -99,6 +99,110 @@ func TestClassifyPluginType(t *testing.T) {
 	}
 }
 
+func TestSplitTitle(t *testing.T) {
+	tests := []struct {
+		title     string
+		wantName  string
+		wantDescr string
+	}{
+		{"CudaLister", "CudaLister", ""},
+		{"Viewix2 - multi file viewer", "Viewix2", "multi file viewer"},
+		{"PlugExtDet – Tool to check and correct plugin entries in wincmd.ini",
+			"PlugExtDet", "Tool to check and correct plugin entries in wincmd.ini"},
+		{"PdbView 2 -", "PdbView 2", ""},
+		{"Udvidede Danske Menuer for TC 7.57a - Windows XP 32bit version -",
+			"Udvidede Danske Menuer for TC 7.57a", "Windows XP 32bit version"},
+		{"Звуковая схема (Mary)", "Звуковая схема (Mary)", ""},
+	}
+
+	for _, tt := range tests {
+		name, descr := splitTitle(tt.title)
+		if name != tt.wantName || descr != tt.wantDescr {
+			t.Errorf("splitTitle(%q) = (%q, %q), want (%q, %q)",
+				tt.title, name, descr, tt.wantName, tt.wantDescr)
+		}
+	}
+}
+
+func TestCleanEntry(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		title      string
+		pluginType string
+		wantName   string
+		wantDescr  string
+		wantFiles  []string
+	}{
+		{
+			name:       "archive title loses the version and the extension",
+			id:         "CVSBrowser",
+			title:      "CVSBrowser_1.0.4.zip",
+			pluginType: "WFX",
+			wantName:   "CVSBrowser",
+			wantFiles:  []string{"cvsbrowser.wfx"},
+		},
+		{
+			name:       "file title names the plugin file",
+			id:         "wdx_anytag",
+			title:      "anytag.wdx",
+			pluginType: "WDX",
+			wantName:   "anytag",
+			wantFiles:  []string{"anytag.wdx"},
+		},
+		{
+			name:       "id with a version suffix names the plugin file",
+			id:         "CVSBrowser_1.0.5",
+			title:      "CVSBrowser",
+			pluginType: "WFX",
+			wantName:   "CVSBrowser",
+			wantFiles:  []string{"cvsbrowser.wfx"},
+		},
+		{
+			name:       "id that already carries the extension is not doubled",
+			id:         "mthumbs.wlx",
+			title:      "mthumbs.wlx",
+			pluginType: "WLX",
+			wantName:   "mthumbs",
+			wantFiles:  []string{"mthumbs.wlx"},
+		},
+		{
+			name:       "description glued to the name moves to the description",
+			id:         "Viewix2",
+			title:      "Viewix2 - multi file viewer",
+			pluginType: "WLX",
+			wantName:   "Viewix2",
+			wantDescr:  "multi file viewer",
+			wantFiles:  []string{"viewix2.wlx"},
+		},
+		{
+			name:       "plain title keeps its name",
+			id:         "cudalister",
+			title:      "CudaLister",
+			pluginType: "WLX",
+			wantName:   "CudaLister",
+			wantFiles:  []string{"cudalister.wlx"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, descr, files := cleanEntry(tt.id, tt.title, tt.pluginType)
+			if name != tt.wantName || descr != tt.wantDescr {
+				t.Fatalf("cleanEntry() = (%q, %q), want (%q, %q)", name, descr, tt.wantName, tt.wantDescr)
+			}
+			if len(files) != len(tt.wantFiles) {
+				t.Fatalf("cleanEntry() files = %v, want %v", files, tt.wantFiles)
+			}
+			for i := range tt.wantFiles {
+				if files[i] != tt.wantFiles[i] {
+					t.Fatalf("cleanEntry() files = %v, want %v", files, tt.wantFiles)
+				}
+			}
+		})
+	}
+}
+
 func TestDedupeStrings(t *testing.T) {
 	got := dedupeStrings([]string{"calendar", "calendar", " other "})
 	want := []string{"calendar", " other "}

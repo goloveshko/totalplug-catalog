@@ -213,6 +213,70 @@ func classifyPluginType(category string) string {
 	}
 }
 
+// versionSuffixRE matches the version an upload's id carries at its end:
+// "CVSBrowser_1.0.5", "pbl_tc_utils_1.0.0". A plain number is left alone —
+// "deb_64" and "PdbView_2" name other things, not other versions.
+var versionSuffixRE = regexp.MustCompile(`_\d+(\.\d+)+$`)
+
+// splitTitle splits a scraped title into the plugin's name and the
+// description the site glued onto it. The site writes the description after
+// a spaced dash ("Viewix2 - multi file viewer", "PlugExtDet – Tool to ...")
+// and some titles end with a bare dash.
+func splitTitle(title string) (name, description string) {
+	title = strings.TrimSpace(title)
+	for _, sep := range []string{" - ", " – ", " — "} {
+		if head, tail, ok := strings.Cut(title, sep); ok {
+			return strings.TrimSpace(head), strings.TrimSpace(strings.TrimRight(tail, "- "))
+		}
+	}
+	return strings.TrimSpace(strings.TrimRight(title, "- ")), ""
+}
+
+// cleanEntry turns the title the site shows into the name, the description
+// and the file names the entry matches on.
+//
+// The site is not careful with its titles: some are the archive's file name
+// ("CVSBrowser_1.0.4.zip"), some are the plugin's own file ("anytag.wdx"),
+// and some carry a description glued onto the name. A title that names the
+// plugin's file is the one file the entry may be found under — the archive
+// it comes in says nothing about the file the plugin installs.
+func cleanEntry(id, rawTitle, pluginType string) (name, description string, files []string) {
+	name, description = splitTitle(rawTitle)
+	ext := "." + strings.ToLower(pluginType)
+
+	fileFromTitle := ""
+	switch {
+	case strings.HasSuffix(strings.ToLower(name), ext):
+		fileFromTitle = strings.ToLower(name)
+		name = strings.TrimSpace(name[:len(name)-len(ext)])
+	case strings.HasSuffix(strings.ToLower(name), ".zip"):
+		// A title that is the archive's name: the plugin's name is that name
+		// without the version of the upload.
+		base := strings.TrimSpace(name[:len(name)-len(".zip")])
+		name = versionSuffixRE.ReplaceAllString(base, "")
+		if strings.HasSuffix(strings.ToLower(name), ext) {
+			fileFromTitle = strings.ToLower(name)
+			name = strings.TrimSpace(name[:len(name)-len(ext)])
+		}
+	}
+
+	// A title that names the plugin's file is the file itself, and the id
+	// guess is dropped: the site prefixes some ids with the plugin type for
+	// its own reasons ("wdx_anytag"), and that is not how the file is named.
+	if fileFromTitle != "" {
+		return strings.TrimSpace(name), description, []string{fileFromTitle}
+	}
+
+	// The id carries the plugin's name, sometimes with the version of the
+	// upload glued on ("CVSBrowser_1.0.5") and sometimes with the extension
+	// already ("mthumbs.wlx").
+	base := versionSuffixRE.ReplaceAllString(id, "")
+	if strings.HasSuffix(strings.ToLower(base), ext) {
+		return strings.TrimSpace(name), description, []string{strings.ToLower(base)}
+	}
+	return strings.TrimSpace(name), description, []string{strings.ToLower(base) + ext}
+}
+
 func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, TotalCmdListURL, nil)
 	if err != nil {
@@ -262,6 +326,8 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		webURL := fmt.Sprintf("https://totalcmd.net/plugring/%s.html", id)
 		downloadURL := fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id)
 
+		name, description, files := cleanEntry(id, title, pType)
+
 		resolved := ResolvedSource{
 			Version:      ver,
 			DownloadURL:  downloadURL,
@@ -273,16 +339,17 @@ func fetchTotalCmdBaseList(ctx context.Context) ([]CatalogEntry, error) {
 		}
 
 		entry := CatalogEntry{
-			ID:        fmt.Sprintf("totalcmd_%s", id),
-			Name:      title,
-			Type:      pType,
-			Category:  category,
-			Homepage:  webURL,
-			Arch:      cleanArch,
-			HasSource: hasSource,
+			ID:          fmt.Sprintf("totalcmd_%s", id),
+			Name:        name,
+			Type:        pType,
+			Category:    category,
+			Description: description,
+			Homepage:    webURL,
+			Arch:        cleanArch,
+			HasSource:   hasSource,
 			Match: MatchRule{
-				Aliases:   dedupeStrings([]string{strings.ToLower(title), id}),
-				Filenames: []string{fmt.Sprintf("%s.%s", strings.ToLower(id), strings.ToLower(pType))},
+				Aliases:   dedupeStrings([]string{strings.ToLower(name), id}),
+				Filenames: files,
 			},
 			Source: &SourceInfo{
 				Type:        "totalcmd_net",
