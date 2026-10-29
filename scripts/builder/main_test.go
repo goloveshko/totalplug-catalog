@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -708,6 +709,111 @@ func TestCatalogMinContract(t *testing.T) {
 	}
 }
 
+func TestSamePluginIDs(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"totalcmd_peviewer", "totalcmd_PEViewer3", true},
+		{"totalcmd_versions", "totalcmd_versions2", true},
+		{"totalcmd_xpiinfo", "totalcmd_xpiinfo2", true},
+		{"totalcmd_envvars", "totalcmd_envvars2", true},
+		// The bit marker is not a number of an upload: the two builds of one
+		// plugin must stay apart.
+		{"totalcmd_archview", "totalcmd_archview64", false},
+		{"totalcmd_iso", "totalcmd_iso64", false},
+		{"totalcmd_mover", "totalcmd_mover64", false},
+		{"totalcmd_7zipInfo", "totalcmd_7zipInfo64", false},
+		{"totalcmd_deb_64", "totalcmd_deb", false},
+		// Not a number glued on: another plugin that merely sounds alike.
+		{"totalcmd_s3", "totalcmd_s3browser", false},
+		{"totalcmd_CVSBrowser_1.0.3", "totalcmd_CVSBrowser_1.0.5", false},
+		// The same entry.
+		{"totalcmd_peviewer", "totalcmd_peviewer", false},
+	}
+
+	for _, tt := range tests {
+		if got := samePluginIDs(tt.a, tt.b); got != tt.want {
+			t.Errorf("samePluginIDs(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestMergeSamePluginEntries(t *testing.T) {
+	// The builder names an entry "totalcmd_<site id>" and keeps the site id
+	// among the aliases.
+	entry := func(siteID, name, file, version, date string) CatalogEntry {
+		return CatalogEntry{
+			ID:   "totalcmd_" + siteID,
+			Name: name,
+			Match: MatchRule{
+				Aliases:   []string{strings.ToLower(name), siteID},
+				Filenames: []string{file},
+			},
+			Resolved: &ResolvedSource{Version: version, PublishedAt: parseTotalCmdDate(date)},
+		}
+	}
+
+	entries := []CatalogEntry{
+		// One plugin in two uploads: the older page keeps the file name an
+		// installed copy answers to.
+		entry("peviewer", "PE Viewer", "peviewer.wlx", "2.0", "16.06.2012"),
+		entry("PEViewer3", "PE Viewer", "peviewer3.wlx", "3.0.18", "28.11.2025"),
+		// The two builds of one plugin: never folded.
+		entry("archview", "ArchView", "archview.wlx", "0.9.1.2", "28.09.2007"),
+		entry("archview64", "ArchView", "archview64.wlx", "0.9.3.0", "05.06.2021"),
+		// A language pack is not an upload of the plugin it translates.
+		entry("imagine", "Imagine", "imagine.wlx", "1.1.6", "31.08.2023"),
+		entry("imagine_rus", "Русский Imagine", "imagine_rus.wlx", "1.0.0.0", "9.12.2007"),
+		// The upload date says which page is current, even where the plugin's
+		// own numbering does not grow with it.
+		entry("addtime_addon", "AddTime Addon", "addtime_addon.util", "1.03", "21.04.2004"),
+		entry("addtime_addon2", "AddTime Addon", "addtime_addon2.util", "1.1.1.2", "02.07.2021"),
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	got := mergeSamePluginEntries(logger, entries)
+
+	if len(got) != 6 {
+		t.Fatalf("mergeSamePluginEntries() = %d entries, want 6: %v", len(got), got)
+	}
+
+	byID := make(map[string]CatalogEntry, len(got))
+	for _, e := range got {
+		byID[e.ID] = e
+	}
+
+	if _, ok := byID["totalcmd_peviewer"]; ok {
+		t.Error("the older upload of PE Viewer survived")
+	}
+	pe, ok := byID["totalcmd_PEViewer3"]
+	if !ok {
+		t.Fatal("the newer upload of PE Viewer is gone")
+	}
+	if pe.Resolved.Version != "3.0.18" {
+		t.Errorf("version = %q, want 3.0.18", pe.Resolved.Version)
+	}
+	if !slices.Contains(pe.Match.Filenames, "peviewer.wlx") {
+		t.Errorf("files = %v, want peviewer.wlx among them", pe.Match.Filenames)
+	}
+	if !slices.Contains(pe.Match.Aliases, "peviewer") {
+		t.Errorf("aliases = %v, want peviewer among them", pe.Match.Aliases)
+	}
+
+	if _, ok := byID["totalcmd_addtime_addon"]; ok {
+		t.Error("the older upload of AddTime Addon survived")
+	}
+	if _, ok := byID["totalcmd_addtime_addon2"]; !ok {
+		t.Error("the newer upload of AddTime Addon is gone")
+	}
+
+	for _, id := range []string{"totalcmd_archview", "totalcmd_archview64", "totalcmd_imagine", "totalcmd_imagine_rus"} {
+		if _, ok := byID[id]; !ok {
+			t.Errorf("%s was folded away", id)
+		}
+	}
+}
+
 func TestParseVersionNumbers(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -735,5 +841,11 @@ func TestParseVersionNumbers(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestTotalcmdPluginPageURL(t *testing.T) {
+	if got, want := totalcmdPluginPageURL("PEViewer3"), "https://totalcmd.net/plugins/PEViewer3"; got != want {
+		t.Errorf("totalcmdPluginPageURL() = %q, want %q", got, want)
 	}
 }

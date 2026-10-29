@@ -377,7 +377,10 @@ func fetchTotalCmdBaseList(ctx context.Context, logger *slog.Logger) ([]CatalogE
 		return nil, fmt.Errorf("reading totalcmd list stream: %w", err)
 	}
 
-	return mergeSameFileEntries(logger, list), nil
+	// Two folds: the pages that name the same plugin file, and the uploads of
+	// the same plugin. The second one runs last, because the first one leaves
+	// the surviving upload with the file names of the pages it replaced.
+	return mergeSamePluginEntries(logger, mergeSameFileEntries(logger, list)), nil
 }
 
 // mergeSameFileEntries folds the entries that name the same plugin file into
@@ -449,12 +452,128 @@ func newerEntry(a, b CatalogEntry) bool {
 	return strings.Compare(a.ID, b.ID) < 0
 }
 
+// uploadDate is the day the site published the upload.
+func uploadDate(e CatalogEntry) time.Time {
+	if e.Resolved == nil {
+		return time.Time{}
+	}
+	return e.Resolved.PublishedAt
+}
+
+// newerUpload reports which of two uploads of the same plugin is the current
+// one. The site dates every upload, and that date says which page is the
+// plugin's current one; the version only breaks a tie, because a plugin's own
+// numbering does not always grow with the upload ("1.1d" from 2007 against
+// "1.0.3" from 2019).
+func newerUpload(a, b CatalogEntry) bool {
+	ad, bd := uploadDate(a), uploadDate(b)
+	if !ad.IsZero() && !bd.IsZero() && !ad.Equal(bd) {
+		return ad.After(bd)
+	}
+	return newerEntry(a, b)
+}
+
 // totalcmdPluginPageURL is the address the site serves a plugin under. The
 // redesign moved the pages from "/plugring/<id>.html" to "/plugins/<id>"; the
 // old address still answers, but only as a redirect to the new one, so the
 // catalog names the page it is served under.
 func totalcmdPluginPageURL(id string) string {
 	return "https://totalcmd.net/plugins/" + id
+}
+
+// pluginNameKey is the name the site shows, reduced to the form two entries of
+// the same plugin agree on: lower case with the spacing collapsed.
+func pluginNameKey(name string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(name))), " ")
+}
+
+// samePluginIDs reports whether two site ids name the same plugin: one is the
+// other with the number of the upload glued on ("peviewer" and "peviewer3").
+//
+// The bit marker is not a number of an upload — "archview64" is the 64-bit
+// build of "archview" — so an id that only grows by the marker names another
+// plugin, and the client tells the two builds apart by that marker.
+func samePluginIDs(a, b string) bool {
+	short, long := strings.ToLower(a), strings.ToLower(b)
+	if short == long {
+		return false
+	}
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	if !strings.HasPrefix(long, short) {
+		return false
+	}
+	rest := long[len(short):]
+	if rest == "64" || rest == "32" {
+		return false
+	}
+	if !strings.ContainsAny(rest, "0123456789") {
+		return false
+	}
+	return strings.Trim(rest, "0123456789.") == ""
+}
+
+// mergeSamePluginEntries folds an older upload of a plugin into the newer
+// upload of the same plugin.
+//
+// The site keeps a page per upload, so one plugin can be two entries:
+// "peviewer" (PE Viewer 2.0, 2012) and "PEViewer3" (PE Viewer 3.0.18) are one
+// plugin in two uploads. The older page is also the one an installed copy
+// still matches by file name, so left alone the client answers an installed
+// 3.0.18 with the 2.0 entry and points at a page twelve years old.
+//
+// The evidence is deliberately narrow. The names must agree, and the ids must
+// be the same word with a number glued on. A number that is the bit marker
+// ("archview" and "archview64") names the two builds of one plugin, and those
+// must stay apart. So must two entries that merely sound alike: a language
+// pack ("Imagine" and "Русский Imagine") and a plugin pack ("SynWrite" and
+// "SynWrite - Binary plugins pack") are not two uploads of one plugin.
+func mergeSamePluginEntries(logger *slog.Logger, entries []CatalogEntry) []CatalogEntry {
+	// Only the entries that share a name can be the same plugin, and few names
+	// are shared at all, so the comparison stays small.
+	byName := make(map[string][]int)
+	for i, e := range entries {
+		key := pluginNameKey(e.Name)
+		if key == "" {
+			continue
+		}
+		byName[key] = append(byName[key], i)
+	}
+
+	folded := make(map[int]bool)
+	for _, idxs := range byName {
+		for a := 0; a < len(idxs); a++ {
+			for b := a + 1; b < len(idxs); b++ {
+				i, j := idxs[a], idxs[b]
+				if folded[i] || folded[j] {
+					continue
+				}
+				if !samePluginIDs(entries[i].ID, entries[j].ID) {
+					continue
+				}
+				best, other := i, j
+				if newerUpload(entries[j], entries[i]) {
+					best, other = j, i
+				}
+				entries[best].Match.Aliases = dedupeStrings(append(entries[best].Match.Aliases, entries[other].Match.Aliases...))
+				entries[best].Match.Filenames = dedupeStrings(append(entries[best].Match.Filenames, entries[other].Match.Filenames...))
+				folded[other] = true
+				logger.Info("Folded an older upload into the newer one",
+					"folded", entries[other].ID,
+					"into", entries[best].ID,
+				)
+			}
+		}
+	}
+
+	out := make([]CatalogEntry, 0, len(entries))
+	for i, e := range entries {
+		if !folded[i] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
