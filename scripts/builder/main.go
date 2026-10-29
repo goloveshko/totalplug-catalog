@@ -323,7 +323,7 @@ func fetchTotalCmdBaseList(ctx context.Context, logger *slog.Logger) ([]CatalogE
 
 		cleanArch, hasSource := parseTotalCmdArch(rawArch)
 		pubDate := parseTotalCmdDate(rawDate)
-		webURL := fmt.Sprintf("https://totalcmd.net/plugring/%s.html", id)
+		webURL := totalcmdPluginPageURL(id)
 		downloadURL := fmt.Sprintf("https://totalcmd.net/download.php?id=%s", id)
 
 		name, description, files := cleanEntry(id, title, pType)
@@ -438,6 +438,14 @@ func newerEntry(a, b CatalogEntry) bool {
 		return c > 0
 	}
 	return strings.Compare(a.ID, b.ID) < 0
+}
+
+// totalcmdPluginPageURL is the address the site serves a plugin under. The
+// redesign moved the pages from "/plugring/<id>.html" to "/plugins/<id>"; the
+// old address still answers, but only as a redirect to the new one, so the
+// catalog names the page it is served under.
+func totalcmdPluginPageURL(id string) string {
+	return "https://totalcmd.net/plugins/" + id
 }
 
 func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
@@ -804,7 +812,7 @@ func main() {
 		case "totalcmd_net":
 			resolved := ResolvedSource{
 				DownloadURL:  fmt.Sprintf("https://totalcmd.net/download.php?id=%s", m.Source.TotalcmdID),
-				WebURL:       fmt.Sprintf("https://totalcmd.net/plugring/%s.html", m.Source.TotalcmdID),
+				WebURL:       totalcmdPluginPageURL(m.Source.TotalcmdID),
 				ResolvedFrom: "totalcmd",
 			}
 			entry.Resolved = &resolved

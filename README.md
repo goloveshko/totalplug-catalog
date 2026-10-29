@@ -93,8 +93,9 @@ version number attached to it — so the schema accepts sources, not backups of 
 
 Instead, TotalPlug finds the mirror when it is actually needed. Once every address the catalog
 names has failed to deliver an archive, and when the failing address is a totalcmd.net download
-link, the updater opens that plugin's plugring page from the user's own machine and retries the
-`Mirror` links it finds there: https only, and only from a short allowlist of trusted hosts
+link, the updater opens that plugin's page — `https://totalcmd.net/plugins/<id>`, the address the
+site moved to when it was redesigned — from the user's own machine and follows it to the plugin's
+`wincmd.ru` counterpart: https only, and only from a short allowlist of trusted hosts
 (`wincmd.ru`). The lookup happens once per broken download rather than for the whole catalog, and
 any failure in it leaves the ordinary error, which names the plugin page.
 
