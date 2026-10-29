@@ -101,26 +101,35 @@ type GitHubAsset struct {
 	Size               int64  `json:"size"`
 }
 
+// parseVersionNumbers splits a version into its numbers. A letter ends the
+// number it follows rather than continuing it: "0.8b2" is a 0.8 with a b2
+// revision, not a 0.82, and reading it as 82 made a 2017 upload look older
+// than a 2005 one.
 func parseVersionNumbers(v string) []int {
 	var parts []int
 	var current int
 	var hasNum bool
 
-	for _, ch := range v {
-		if ch >= '0' && ch <= '9' {
-			current = current*10 + int(ch-'0')
-			hasNum = true
-		} else if ch == '.' || ch == '-' || ch == '_' {
-			if hasNum {
-				parts = append(parts, current)
-				current = 0
-				hasNum = false
-			}
+	flush := func() {
+		if hasNum {
+			parts = append(parts, current)
+			current = 0
+			hasNum = false
 		}
 	}
-	if hasNum {
-		parts = append(parts, current)
+
+	for _, ch := range v {
+		switch {
+		case ch >= '0' && ch <= '9':
+			current = current*10 + int(ch-'0')
+			hasNum = true
+		case ch == '.' || ch == '-' || ch == '_':
+			flush()
+		default:
+			flush()
+		}
 	}
+	flush()
 	return parts
 }
 

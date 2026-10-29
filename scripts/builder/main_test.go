@@ -707,3 +707,33 @@ func TestCatalogMinContract(t *testing.T) {
 		t.Error("catalog.resolved.json entry must retain the source block")
 	}
 }
+
+func TestParseVersionNumbers(t *testing.T) {
+	tests := []struct {
+		in   string
+		want []int
+	}{
+		{"1.2.3", []int{1, 2, 3}},
+		{"v0.9", []int{0, 9}},
+		// A letter ends the number it follows: a 2017 upload must not read as
+		// a 0.82 and look older than a 0.9 from 2005.
+		{"v0.8b2", []int{0, 8, 2}},
+		{"2.0b", []int{2, 0}},
+		{"1_0_5", []int{1, 0, 5}},
+		{"", nil},
+	}
+
+	for _, tt := range tests {
+		got := parseVersionNumbers(tt.in)
+		if len(got) != len(tt.want) {
+			t.Errorf("parseVersionNumbers(%q) = %v, want %v", tt.in, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("parseVersionNumbers(%q) = %v, want %v", tt.in, got, tt.want)
+				break
+			}
+		}
+	}
+}
