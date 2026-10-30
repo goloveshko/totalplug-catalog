@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "id": "mdview_mshtml",
+  "name": "MDView (MSHTML)",
+  "type": "WLX",
+  "category": "Viewer",
+  "description": "Markdown viewer for Total Commander on the older MSHTML engine: table of contents, split view, find in page, Mermaid diagrams and YAML front matter. It installs the same file names as the WebView2 MDView, and the installed version tells the two apart.",
+  "authors": ["jumpifequal"],
+  "homepage": "https://github.com/jumpifequal/mdview-for-Total-Commander",
+  "license": "MIT",
+  "match": {
+    "aliases": ["mdview", "mdview_lister_extension", "wlx mdview for total commander", "markdown viewer lister plugin"],
+    "filenames": ["mdview.wlx", "mdview.wlx64"]
+  },
+  "source": {
+    "type": "totalcmd_net",
+    "totalcmd_id": "mdview_lister_extension"
+  }
+}

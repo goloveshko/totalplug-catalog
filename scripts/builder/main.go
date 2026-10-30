@@ -615,10 +615,35 @@ func mergeSamePluginEntries(logger *slog.Logger, entries []CatalogEntry) []Catal
 	return out
 }
 
-func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
+// fileClaim is one plugin's claim on one file name: the manifest that made
+// it and the source the plugin comes from.
+type fileClaim struct {
+	path   string
+	source string
+}
+
+// sourceIdentity names the plugin behind a source, so that two manifests
+// pointing at the same plugin are recognized as one plugin however
+// differently they are written.
+func sourceIdentity(src SourceInfo) string {
+	switch src.Type {
+	case "github_release":
+		return "github:" + strings.ToLower(strings.TrimSpace(src.Repo))
+	case "totalcmd_net":
+		return "totalcmd:" + strings.ToLower(strings.TrimSpace(src.TotalcmdID))
+	case "direct_url":
+		return "url:" + strings.TrimSpace(src.DownloadURL)
+	}
+	return src.Type
+}
+
+func loadCommunityManifests(pluginsDir string, logger *slog.Logger) ([]PluginManifest, error) {
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	var manifests []PluginManifest
 	seenIDs := make(map[string]string)
-	seenFiles := make(map[string]string)
+	seenFiles := make(map[string]fileClaim)
 
 	err := filepath.Walk(pluginsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -648,21 +673,28 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 		}
 		seenIDs[m.ID] = path
 
-		// One file, one plugin. The client keys a plugin by the file it
-		// installs, so two manifests claiming the same file leave it choosing
-		// between them by version alone - and the newer number is often the
-		// other plugin's. Two MDView plugins for Total Commander install
-		// "mdview.wlx" each, one on WebView2 and one on the older MSHTML
-		// engine; the catalog may hold one of them, never both.
+		// One file may belong to two plugins. Two MDView plugins for Total
+		// Commander install "mdview.wlx" each, one on WebView2 and one on the
+		// older MSHTML engine, and the catalog has to hold both - the client
+		// tells them apart by the version that is installed.
+		//
+		// What must not happen is the same plugin listed twice under one
+		// file: that is one plugin in the catalog twice, and the client would
+		// offer the two rows as two candidates for the same file.
 		for _, fn := range m.Match.Filenames {
 			key := strings.ToLower(strings.TrimSpace(fn))
 			if key == "" {
 				continue
 			}
+			claim := fileClaim{path: path, source: sourceIdentity(m.Source)}
 			if prev, dup := seenFiles[key]; dup {
-				return fmt.Errorf("%s: file %q is already claimed by %s - one file belongs to one plugin", path, fn, prev)
+				if prev.source == claim.source {
+					return fmt.Errorf("%s: file %q is already claimed by %s - one plugin is listed twice", path, fn, prev.path)
+				}
+				logger.Warn("Two plugins install the same file; the client tells them apart by the installed version",
+					"file", fn, "plugin", prev.path, "other", claim.path)
 			}
-			seenFiles[key] = path
+			seenFiles[key] = claim
 		}
 
 		// Enforce the plugins/<type>/<id>.json layout: a manifest sitting in a
@@ -922,7 +954,7 @@ func main() {
 
 	logger.Info("Starting TotalPlug catalog build process...")
 
-	communityManifests, err := loadCommunityManifests(*pluginsDir)
+	communityManifests, err := loadCommunityManifests(*pluginsDir, logger)
 	if err != nil {
 		// A broken or colliding manifest must fail the build loudly,
 		// not disappear silently from the published catalog.

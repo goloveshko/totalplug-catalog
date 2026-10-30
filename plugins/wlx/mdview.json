@@ -4,7 +4,7 @@
   "name": "MDView (WebView2)",
   "type": "WLX",
   "category": "Viewer",
-  "description": "Markdown viewer for Total Commander on the WebView2 engine: dark mode, syntax highlighting, and a standalone viewer that renders in the terminal too. The site lists a different MDView for Total Commander, built on the older MSHTML engine.",
+  "description": "Markdown viewer for Total Commander on the WebView2 engine: dark mode, syntax highlighting, and a standalone viewer that renders in the terminal too. The catalog also lists the older MSHTML MDView, which installs the same file names; the installed version tells the two apart.",
   "authors": ["Remko Weijnen"],
   "homepage": "https://github.com/rweijnen/MDView",
   "license": "MPL-2.0",

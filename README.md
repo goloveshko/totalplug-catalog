@@ -71,7 +71,7 @@ Adding a plugin takes less than 2 minutes:
 4. Open a **Pull Request**. CI will validate your JSON automatically.
 5. Once merged, it goes live in the global catalog!
 
-> **One file, one plugin.** The client finds an installed plugin by the file it installs, so the catalog may hold only one plugin per file name: with two, the client would have to choose between them by version alone, and the newer number is often the other plugin's. Two MDView plugins for Total Commander install `mdview.wlx` each — one on the WebView2 engine, one on the older MSHTML engine — and the catalog holds the WebView2 one, named `MDView (WebView2)` so the two are not mistaken for each other. The build fails when two manifests claim the same file name.
+> **One file, one plugin — unless two plugins really install the same file.** The client finds an installed plugin by the file it installs, so a file name normally belongs to one plugin. Two MDView plugins for Total Commander install `mdview.wlx` each — one on the WebView2 engine, one on the older MSHTML engine — and the catalog holds both, named `MDView (WebView2)` and `MDView (MSHTML)` so the two are not mistaken for each other. The client tells them apart by the version that is installed, and refuses to choose when that version cannot be read. What the build refuses is one plugin listed twice under one file name: two manifests of the same plugin claiming one file fail the build, two different plugins claiming it only warn.
 
 ---
 

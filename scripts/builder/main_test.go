@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+// testLogger is the logger the builder writes its findings to in a test: the
+// findings are not the subject of the test, so they go nowhere.
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
 		v1, v2 string
@@ -364,9 +370,10 @@ func TestDropRedundantSources(t *testing.T) {
 }
 
 func TestLoadCommunityManifests(t *testing.T) {
-	// Every manifest claims a file of its own, the way two real plugins do:
-	// a file belongs to one plugin, so two manifests naming the same one is
-	// the case the build refuses.
+	// Every manifest claims a file of its own, the way two real plugins do.
+	// One file may belong to two plugins - the two MDView plugins install
+	// "mdview.wlx" each - but one plugin may not be listed twice under one
+	// file: that is the case the build refuses.
 	writeManifest := func(t *testing.T, dir, file, id string) {
 		t.Helper()
 		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["` + id + `.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
@@ -383,12 +390,20 @@ func TestLoadCommunityManifests(t *testing.T) {
 		}
 	}
 
+	writeManifestWithRepo := func(t *testing.T, dir, file, id, pluginFile, repo string) {
+		t.Helper()
+		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["` + pluginFile + `"]},"source":{"type":"github_release","repo":"` + repo + `"}}`
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	t.Run("loads valid manifests", func(t *testing.T) {
 		dir := t.TempDir()
 		writeManifest(t, dir, "one.json", "one")
 		writeManifest(t, dir, "two.json", "two")
 
-		got, err := loadCommunityManifests(dir)
+		got, err := loadCommunityManifests(dir, testLogger())
 		if err != nil || len(got) != 2 {
 			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 2, nil", len(got), err)
 		}
@@ -399,18 +414,32 @@ func TestLoadCommunityManifests(t *testing.T) {
 		writeManifest(t, dir, "one.json", "same")
 		writeManifest(t, dir, "two.json", "same")
 
-		if _, err := loadCommunityManifests(dir); err == nil {
+		if _, err := loadCommunityManifests(dir, testLogger()); err == nil {
 			t.Fatal("expected error for duplicate id, got nil")
 		}
 	})
 
-	t.Run("two manifests claiming one file fail", func(t *testing.T) {
+	t.Run("one plugin claiming one file twice fails", func(t *testing.T) {
 		dir := t.TempDir()
-		writeManifestWithFile(t, dir, "one.json", "one", "mdview.wlx")
-		writeManifestWithFile(t, dir, "two.json", "two", "mdview.wlx")
+		writeManifestWithRepo(t, dir, "one.json", "one", "mdview.wlx", "rweijnen/MDView")
+		writeManifestWithRepo(t, dir, "two.json", "two", "mdview.wlx", "rweijnen/MDView")
 
-		if _, err := loadCommunityManifests(dir); err == nil {
-			t.Fatal("expected error for a file claimed twice, got nil")
+		if _, err := loadCommunityManifests(dir, testLogger()); err == nil {
+			t.Fatal("expected error for one plugin listed twice, got nil")
+		}
+	})
+
+	t.Run("two plugins claiming one file are kept", func(t *testing.T) {
+		// Two MDView plugins for Total Commander install "mdview.wlx" each.
+		// The catalog holds both, and the client tells them apart by the
+		// version that is installed.
+		dir := t.TempDir()
+		writeManifestWithRepo(t, dir, "one.json", "one", "mdview.wlx", "rweijnen/MDView")
+		writeManifestWithRepo(t, dir, "two.json", "two", "mdview.wlx", "jumpifequal/mdview-for-Total-Commander")
+
+		got, err := loadCommunityManifests(dir, testLogger())
+		if err != nil || len(got) != 2 {
+			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 2, nil", len(got), err)
 		}
 	})
 
@@ -419,7 +448,7 @@ func TestLoadCommunityManifests(t *testing.T) {
 		writeManifestWithFile(t, dir, "one.json", "one", "MDView.wlx")
 		writeManifestWithFile(t, dir, "two.json", "two", "mdview.wlx")
 
-		if _, err := loadCommunityManifests(dir); err == nil {
+		if _, err := loadCommunityManifests(dir, testLogger()); err == nil {
 			t.Fatal("expected error for a file claimed twice, got nil")
 		}
 	})
@@ -429,7 +458,7 @@ func TestLoadCommunityManifests(t *testing.T) {
 		writeManifestWithFile(t, dir, "one.json", "one", "viewer.wlx")
 		writeManifestWithFile(t, dir, "two.json", "two", "viewer64.wlx")
 
-		got, err := loadCommunityManifests(dir)
+		got, err := loadCommunityManifests(dir, testLogger())
 		if err != nil || len(got) != 2 {
 			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 2, nil", len(got), err)
 		}
@@ -439,13 +468,13 @@ func TestLoadCommunityManifests(t *testing.T) {
 		dir := t.TempDir()
 		writeManifest(t, dir, "one.json", "totalcmd_calendar")
 
-		if _, err := loadCommunityManifests(dir); err == nil {
+		if _, err := loadCommunityManifests(dir, testLogger()); err == nil {
 			t.Fatal("expected error for reserved prefix, got nil")
 		}
 	})
 
 	t.Run("missing dir is not an error", func(t *testing.T) {
-		got, err := loadCommunityManifests(filepath.Join(t.TempDir(), "nope"))
+		got, err := loadCommunityManifests(filepath.Join(t.TempDir(), "nope"), testLogger())
 		if err != nil || len(got) != 0 {
 			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 0, nil", len(got), err)
 		}
@@ -468,7 +497,7 @@ func TestLoadCommunityManifests(t *testing.T) {
 		}
 		writeTypedManifest(t, sub, "foo.json", "foo", "WLX")
 
-		got, err := loadCommunityManifests(root)
+		got, err := loadCommunityManifests(root, testLogger())
 		if err != nil || len(got) != 1 {
 			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 1, nil", len(got), err)
 		}
@@ -482,7 +511,7 @@ func TestLoadCommunityManifests(t *testing.T) {
 		}
 		writeTypedManifest(t, sub, "foo.json", "foo", "WLX")
 
-		if _, err := loadCommunityManifests(root); err == nil {
+		if _, err := loadCommunityManifests(root, testLogger()); err == nil {
 			t.Fatal("expected error for type/directory mismatch, got nil")
 		}
 	})
