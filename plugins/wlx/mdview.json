@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "id": "mdview",
+  "name": "MDView",
+  "type": "WLX",
+  "category": "Viewer",
+  "description": "Fast and lightweight Markdown viewer plugin with syntax highlighting and diagrams",
+  "authors": ["Remko Weijnen"],
+  "homepage": "https://github.com/rweijnen/MDView",
+  "license": "MIT",
+  "match": {
+    "aliases": ["mdview", "wlx_mdview", "markdown viewer"],
+    "filenames": ["mdview.wlx", "mdview.wlx64"]
+  },
+  "source": {
+    "type": "github_release",
+    "repo": "rweijnen/MDView",
+    "asset_pattern": "^MDView-v.*\\.zip$"
+  }
+}

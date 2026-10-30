@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/plugin.schema.json",
+  "id": "wlx_edge_viewer",
+  "name": "WLX Edge Viewer",
+  "type": "WLX",
+  "category": "Viewer",
+  "description": "Modern Chromium-based WebView2 document and web page viewer plugin for Total Commander",
+  "authors": ["rg-software"],
+  "homepage": "https://github.com/rg-software/wlx-edge-viewer",
+  "license": "GPL-3.0",
+  "match": {
+    "aliases": ["wlx_edge_viewer", "edge viewer", "webview2 viewer"],
+    "filenames": ["EdgeViewer.wlx", "EdgeViewer.wlx64", "wlx_edge_viewer.wlx"]
+  },
+  "source": {
+    "type": "github_release",
+    "repo": "rg-software/wlx-edge-viewer",
+    "asset_pattern": "^wlx-edge-viewer-v.*-Windows\\.zip$"
+  }
+}
