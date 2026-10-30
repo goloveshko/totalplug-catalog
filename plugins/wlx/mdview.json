@@ -1,13 +1,13 @@
 {
   "$schema": "../../schemas/plugin.schema.json",
   "id": "mdview",
-  "name": "MDView",
+  "name": "MDView (WebView2)",
   "type": "WLX",
   "category": "Viewer",
-  "description": "Fast and lightweight Markdown viewer plugin with syntax highlighting and diagrams",
+  "description": "Markdown viewer for Total Commander on the WebView2 engine: dark mode, syntax highlighting, and a standalone viewer that renders in the terminal too. The site lists a different MDView for Total Commander, built on the older MSHTML engine.",
   "authors": ["Remko Weijnen"],
   "homepage": "https://github.com/rweijnen/MDView",
-  "license": "MIT",
+  "license": "MPL-2.0",
   "match": {
     "aliases": ["mdview", "wlx_mdview", "markdown viewer"],
     "filenames": ["mdview.wlx", "mdview.wlx64"]
