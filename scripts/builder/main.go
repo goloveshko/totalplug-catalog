@@ -618,6 +618,7 @@ func mergeSamePluginEntries(logger *slog.Logger, entries []CatalogEntry) []Catal
 func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 	var manifests []PluginManifest
 	seenIDs := make(map[string]string)
+	seenFiles := make(map[string]string)
 
 	err := filepath.Walk(pluginsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -646,6 +647,23 @@ func loadCommunityManifests(pluginsDir string) ([]PluginManifest, error) {
 			return fmt.Errorf("duplicate plugin id %q: %s conflicts with %s", m.ID, path, prev)
 		}
 		seenIDs[m.ID] = path
+
+		// One file, one plugin. The client keys a plugin by the file it
+		// installs, so two manifests claiming the same file leave it choosing
+		// between them by version alone - and the newer number is often the
+		// other plugin's. Two MDView plugins for Total Commander install
+		// "mdview.wlx" each, one on WebView2 and one on the older MSHTML
+		// engine; the catalog may hold one of them, never both.
+		for _, fn := range m.Match.Filenames {
+			key := strings.ToLower(strings.TrimSpace(fn))
+			if key == "" {
+				continue
+			}
+			if prev, dup := seenFiles[key]; dup {
+				return fmt.Errorf("%s: file %q is already claimed by %s - one file belongs to one plugin", path, fn, prev)
+			}
+			seenFiles[key] = path
+		}
 
 		// Enforce the plugins/<type>/<id>.json layout: a manifest sitting in a
 		// recognized type folder must declare that same type, so a WLX plugin

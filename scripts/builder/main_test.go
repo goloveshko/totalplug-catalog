@@ -364,9 +364,20 @@ func TestDropRedundantSources(t *testing.T) {
 }
 
 func TestLoadCommunityManifests(t *testing.T) {
+	// Every manifest claims a file of its own, the way two real plugins do:
+	// a file belongs to one plugin, so two manifests naming the same one is
+	// the case the build refuses.
 	writeManifest := func(t *testing.T, dir, file, id string) {
 		t.Helper()
-		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["a.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
+		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["` + id + `.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeManifestWithFile := func(t *testing.T, dir, file, id, pluginFile string) {
+		t.Helper()
+		content := `{"id":"` + id + `","name":"` + id + `","type":"WLX","description":"d","match":{"filenames":["` + pluginFile + `"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -393,6 +404,37 @@ func TestLoadCommunityManifests(t *testing.T) {
 		}
 	})
 
+	t.Run("two manifests claiming one file fail", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifestWithFile(t, dir, "one.json", "one", "mdview.wlx")
+		writeManifestWithFile(t, dir, "two.json", "two", "mdview.wlx")
+
+		if _, err := loadCommunityManifests(dir); err == nil {
+			t.Fatal("expected error for a file claimed twice, got nil")
+		}
+	})
+
+	t.Run("the same file in another case is the same file", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifestWithFile(t, dir, "one.json", "one", "MDView.wlx")
+		writeManifestWithFile(t, dir, "two.json", "two", "mdview.wlx")
+
+		if _, err := loadCommunityManifests(dir); err == nil {
+			t.Fatal("expected error for a file claimed twice, got nil")
+		}
+	})
+
+	t.Run("the two builds of one plugin are two files", func(t *testing.T) {
+		dir := t.TempDir()
+		writeManifestWithFile(t, dir, "one.json", "one", "viewer.wlx")
+		writeManifestWithFile(t, dir, "two.json", "two", "viewer64.wlx")
+
+		got, err := loadCommunityManifests(dir)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("loadCommunityManifests() = %d manifests, err %v; want 2, nil", len(got), err)
+		}
+	})
+
 	t.Run("reserved totalcmd_ prefix fails", func(t *testing.T) {
 		dir := t.TempDir()
 		writeManifest(t, dir, "one.json", "totalcmd_calendar")
@@ -412,7 +454,7 @@ func TestLoadCommunityManifests(t *testing.T) {
 	writeTypedManifest := func(t *testing.T, dir, file, id, typ string) {
 		t.Helper()
 		content := `{"id":"` + id + `","name":"` + id + `","type":"` + typ +
-			`","description":"d","match":{"filenames":["a.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
+			`","description":"d","match":{"filenames":["` + id + `.wlx"]},"source":{"type":"direct_url","download_url":"https://example.com/a.zip","version":"1.0"}}`
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
